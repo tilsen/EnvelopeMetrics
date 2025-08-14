@@ -1,4 +1,4 @@
 # EnvelopeMetrics
 code for LFFA and EMD analysis of speech amplitude envelope
 
-Start with [envelopeMetrics.html](EnvelopeMetrics.html)
+Download the repository and open [envelopeMetrics.html](EnvelopeMetrics.html) in a browser to get started.
