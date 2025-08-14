@@ -193,6 +193,7 @@ EMD = struct2table(EMD);
 vecf = {'pow_imf' 'mu_w' 'var_w' 'sd_w'};
 for i=1:height(EMD)
     for j=1:length(vecf)
+        if ~iscell(EMD.(vecf{j})), continue; end
         n_vals = length(EMD.(vecf{j}){i});
         if n_vals<res.max_imf
             EMD.(vecf{j}){i} = [EMD.(vecf{j}){i} nan(1,res.max_imf-n_vals)];
@@ -201,7 +202,9 @@ for i=1:height(EMD)
 end
 
 for i=1:length(vecf)
-    EMD.(vecf{i}) = cell2mat(EMD.(vecf{i}));
+    if iscell(EMD.(vecf{i}))
+        EMD.(vecf{i}) = cell2mat(EMD.(vecf{i}));
+    end
     sz = size(EMD.(vecf{i}),2);
     for j=1:sz
         EMD.([vecf{i} num2str(j)]) = EMD.(vecf{i})(:,j);
