@@ -101,9 +101,10 @@ classdef envelopeMetrics
             L = fix(N*obj.spec_SmoothBw/obj.env_Fs);
 
             if any(envLengths>N)
-                fprintf(['ERROR: envelope length exceeds number of spectral coefficients.\n' ...
-                    'Increase nfft, decrease signal lengths, or increase downsampling factor.\n']);
-                return;
+                warning('extractSpectra:fftUndersampled',...
+                    ['envelope length exceeds number of spectral coefficients.\n' ...
+                    'Spectral metrics may be unreliable.\n'...
+                    'Increase nfft, decrease signal lengths, or increase downsampling factor.\n']);                
             end
             envelopesPadded = cellfun(@(c,d){[c(:)' zeros(1,N - d)]},envelopes,num2cell(envLengths));
             
@@ -120,6 +121,12 @@ classdef envelopeMetrics
         end
 
         function [metrics] = spectralMetrics(obj,spectra,freqs)
+
+            if nargin<3
+                envelopes = obj.extractEnvelopes();
+                [spectra,freqs] = obj.extractSpectra(envelopes);
+            end
+
             for i=1:size(obj.spec_PowerBins,1)
                 binIxs = (freqs>=obj.spec_PowerBins(i,1) & freqs<obj.spec_PowerBins(i,2));
                 binPowers(:,i) = cellfun(@(c)sum(c(binIxs)),spectra);
@@ -136,6 +143,10 @@ classdef envelopeMetrics
         end
 
         function [metrics,imfs,imfw,report] = emdMetrics(obj,envelopes)
+
+            if nargin==1
+                envelopes=obj.extractEnvelopes();
+            end
 
             envelopes = obj.attenuateEdges(envelopes);
 
@@ -161,7 +172,8 @@ classdef envelopeMetrics
 
         function [imfs,imfw,report] = getImfs(obj,envelopes)
             
-            imfs = cellfun(@(c){emd(c,"SiftRelativeTolerance",obj.emd_SiftRelTol,'MaxNumIMF',obj.emd_MaxImf)},envelopes); 
+            imfs = cellfun(@(c){emd(c,"SiftRelativeTolerance", ...
+                obj.emd_SiftRelTol,'MaxNumIMF',obj.emd_MaxImf)},envelopes); 
             
             numImfs = cellfun(@(c)size(c,2),imfs);
 
@@ -177,9 +189,11 @@ classdef envelopeMetrics
             end
 
             for i=1:length(imfs)
-                [hs{i},~,times{i},w{i}] = hht(imfs{i},obj.env_Fs);
+                w{i} = nan(size(imfs{i},1),obj.emd_MaxImf);
+                [~,~,times{i},w{i}(:,1:numImfs(i))] = hht(imfs{i}(:,1:numImfs(i)),obj.env_Fs);
             end
-
+            w_all = vertcat(w{:});
+            nan_missing = sum(isnan(w_all));            
 
             %replace edge values with nan
             if ~isempty(obj.emd_EdgeNull) && ~isnan(obj.emd_EdgeNull)
@@ -191,14 +205,14 @@ classdef envelopeMetrics
 
             w_lens = cellfun(@(c)length(c),times);
             w_all = vertcat(w{:});
-            nan_edge = sum(isnan(w_all));
+            nan_edge = sum(isnan(w_all)) - nan_missing;
 
             %replace out-of-range frequencies with 
             nan_outofrange = 0;
             if ~isempty(obj.emd_ImfFreqBounds)
                 w_all(w_all<obj.emd_ImfFreqBounds(1)) = nan;
                 w_all(w_all>obj.emd_ImfFreqBounds(2)) = nan;
-                nan_outofrange = sum(isnan(w_all)) - nan_edge;
+                nan_outofrange = sum(isnan(w_all)) - nan_edge - nan_missing;
             end
 
             %percentile exclusions
@@ -206,7 +220,7 @@ classdef envelopeMetrics
             if ~isempty(obj.emd_FreqExclusionPercentile) && ~isnan(obj.emd_FreqExclusionPercentile)
                 p_imf = prctile(w_all,obj.emd_FreqExclusionPercentile);
                 w_all(w_all>p_imf) = nan;
-                nan_prctileexc = sum(isnan(w_all)) - nan_outofrange - nan_edge;
+                nan_prctileexc = sum(isnan(w_all)) - nan_outofrange - nan_edge - nan_missing;
             end
 
             report = table("imf" + (1:obj.emd_MaxImf)', ...
