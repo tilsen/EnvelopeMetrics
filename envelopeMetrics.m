@@ -21,7 +21,7 @@ classdef envelopeMetrics
         emd_ImfFreqBounds = [0 13.16] %frequency at which magnitude response of 4th order butterworth is -10dB
         emd_SiftRelTol = 0.1
         emd_FreqExclusionPercentile = 99
-        verbose = false
+        verbose = false        
     end
 
     methods
