@@ -26,6 +26,7 @@ classdef envelopeMetrics
 
     methods
         function obj = envelopeMetrics(X,Fs)
+            if nargin ==0, return; end
             if ~iscell(X) || ~(any(size(X{1})==1))
                 fprintf('ERROR: input waveforms as a cell array of row or column vectors');
                 return
