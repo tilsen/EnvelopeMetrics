@@ -126,8 +126,8 @@ $$
 
 ![Envelope power spectrum](figures/spectrum.png)
 
-*Two prominent peaks: one around 1.5–2 Hz (phrase/foot-level rhythm) and one around 5 Hz
-(syllable-level rhythm), consistent with the two stress peaks visible in the waveform above.*
+*Two prominent peaks: one around 1.5–2 Hz (supra-syllabic timescale rhythm) and one around 5 Hz
+(syllable timescale rhythm), consistent with the three peaks visible in the amplitude envelope.*
 
 ## 4. Spectral metrics
 
@@ -157,11 +157,11 @@ $$
 ## 5. Empirical Mode Decomposition
 
 Empirical Mode Decomposition adaptively decomposes the (edge-attenuated) envelope into a
-small number of oscillatory components — Intrinsic Mode Functions (IMFs) $c_1(t), c_2(t),
-\dots$ — ordered from fastest to slowest oscillation, via an iterative *sifting* procedure:
-repeatedly subtract the mean of the upper and lower envelopes (fit through the signal's
-local maxima and minima) until the result meets a stopping criterion, then subtract that
-IMF from the signal and repeat for the next one. `getImfs` calls MATLAB's `emd` with:
+small number of oscillatory components — Intrinsic Mode Functions (IMFs) $c_1(t), c_2(t), \dots$
+— ordered from fastest to slowest oscillation, via an iterative *sifting* procedure: repeatedly
+subtract the mean of the upper and lower envelopes (fit through the signal's local maxima and
+minima) until the result meets a stopping criterion, then subtract that IMF from the signal and
+repeat for the next one. `getImfs` calls MATLAB's `emd` with:
 
 - `emd_SiftRelTol` (default 0.1) — the relative tolerance that ends sifting for one IMF.
 - `emd_MaxImf` (default 3) — the maximum number of IMFs to extract (fewer may be returned
