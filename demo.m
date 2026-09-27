@@ -54,13 +54,19 @@ disp(psMetrics);
 fig3 = EnvelopeMetricsPlotter.plotImfs(t_env{1}, env{1}, imfs{1}(1:2, :));
 EnvelopeMetricsPlotter.saveFigure(fig3, fullfile(figDir, 'imfs.png'));
 
-fig4 = EnvelopeMetricsPlotter.plotImfFrequencies(t_env{1}, env{1}, imfw{1}(1:2, :));
+fig4 = EnvelopeMetricsPlotter.plotImfFrequencies(t_env{1}, imfw{1}(1:2, :));
 EnvelopeMetricsPlotter.saveFigure(fig4, fullfile(figDir, 'imf_freq.png'));
+
+% Combined overview: the envelope as fed into EMD (attenuated), its IMFs,
+% and their instantaneous frequencies, stacked and x-aligned in one figure.
+attenuatedEnv = em.attenuateEdges(env);
+fig5 = EnvelopeMetricsPlotter.plotEmdOverview(t_env{1}, attenuatedEnv{1}, imfs{1}(1:2, :), imfw{1}(1:2, :));
+EnvelopeMetricsPlotter.saveFigure(fig5, fullfile(figDir, 'emd_overview.png'));
 
 emdMetrics = em.emdMetrics(env);
 disp(emdMetrics);
 
-close([fig1.Handle fig2.Handle fig3.Handle fig4.Handle]);
+close([fig1.Handle fig2.Handle fig3.Handle fig4.Handle fig5.Handle]);
 
 %% Parameters and presets
 % Every tunable property round-trips through getParams/setParams as a plain

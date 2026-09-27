@@ -136,9 +136,7 @@ phrase-timescale oscillations, especially for longer chunks.
 emdMetrics = em.emdMetrics(env);
 ```
 
-![Envelope and IMFs](figures/imfs.png)
-
-![IMF instantaneous frequency](figures/imf_freq.png)
+![Envelope, IMFs, and instantaneous frequency](figures/emd_overview.png)
 
 The number of IMFs extracted is set by `emd_MaxImf` (fewer may be returned, depending on
 `emd_SiftRelTol`). Instantaneous frequency is only meaningful where an IMF has substantial
@@ -196,5 +194,40 @@ em = envelopeMetrics(X, Fs{1}).setParams(preset);
   (`EnvelopeMetrics_2025-08.mlx`/`.html`) and legacy function-based code.
 - [CITATION.cff](CITATION.cff) — citation metadata for this repository.
 
-## Tips/Caveats
+## Tips and caveats
 
+- *IMF metric interpretations*: with default analysis parameters, imf1 and imf2 obtained from
+fluent adult speech can loosely be associated with syllable and stress-timescale periodicities,
+respectively. However, there is no ground-truth separation between sub-syllabic (i.e. segmental),
+syllabic, stress-related, and supra-stress (i.e. phrasal) timescales, and so this distinction
+hinges on parameterization of the algorithm.
+
+- *Envelope parameterization*: in general, the vocalic energy amplitude
+envelope captures some energy fluctuations associated with segmental acoustic energy, and may capture
+fluctuations associated with supra-stress timescale when tokens are sufficiently long. Lowering the
+cutoff of the low-pass filter (`env_Lowpass`) can diminish the contribution of segment-timescale
+fluctuations in the envelope, and accordingly in imf1, but lowering it too much will diminish
+syllable-timescale fluctuations, which are often of interest. The default is `10 Hz`, which
+corresponds to 100 ms. Note that because a Butterworth filter is used for low-pass filtering, the
+attenuation roll-off is relatively gradual, which means that some energy beyond the cutoff gets
+retained in the envelope.
+
+- *Phrasal timescale periodicity*: imf3 may or may not be identified by the EMD algorithm, and can roughly be associated
+with phrase- (or supra-stress-) timescale periodicity. Longer utterances are more likely
+to result in meaningful imf3. imf2 is less meaningful for short tokens (< 2s).
+
+- *Token length*: Metrics from longer tokens (> 3s) will blur rhythmic variation that occurs
+within the utterance. There is an inherent trade-off associated with token length:
+lower-frequency imfs (i.e. imf2, and imf3) become more meaningful as token length increases,
+but increasing token length also results in the metrics reflecting averages over portions of an utterance
+that may have different rhythmic characteristics.
+
+- *Edge artefacts*: zero-padding of the waveform and/or edge-attenuation of the envelope
+are important. If token extents (`t0` and `t1` in the input table) coincide with active speech,
+use zero-padding (e.g. `env_ZeroPad=0.05`) to diminish edge artefacts.
+
+- *Token-internal pauses/disfluency*: When tokens include disfluencies or internal pauses,
+rhythm metrics can no longer be directly interpreted as representing "syllable" and "stress"-timescale
+periodicity. In these circumstances, the metrics can still be used to characterize
+rhythm, but specifically, it is a more generic notion of "rhythm" that conflates
+speech activity and/or disfluency with syllable- and stress-periodicity.
