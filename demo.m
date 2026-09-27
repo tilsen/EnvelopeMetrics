@@ -61,3 +61,14 @@ emdMetrics = em.emdMetrics(env);
 disp(emdMetrics);
 
 close([fig1.Handle fig2.Handle fig3.Handle fig4.Handle]);
+
+%% Parameters and presets
+% Every tunable property round-trips through getParams/setParams as a plain
+% struct, so a corpus-specific configuration can be saved and reapplied later.
+preset = envelopeMetrics.defaultParams();
+preset.env_Passband = [300 3400];
+preset.emd_MaxImf = 4;
+
+em2 = envelopeMetrics(X, Fs{1}).setParams(preset);
+fprintf('em2 uses %d IMFs and a %g-%g Hz passband\n', ...
+    em2.emd_MaxImf, em2.env_Passband(1), em2.env_Passband(2));

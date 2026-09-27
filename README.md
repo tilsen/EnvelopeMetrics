@@ -42,9 +42,11 @@ fits the original signal.
 
 ![Waveform and envelope](figures/waveform_envelope.png)
 
-Key adjustable properties: `env_Passband` (default 400-4000 Hz), `env_Lowpass` (default 10
-Hz), `env_BandpassFilterOrder`, `env_LowpassFilterOrder`, `env_Downsample` (the envelope's
-sampling rate is `Fs / env_Downsample`).
+Key adjustable properties: `env_Passband` (default 400-4000 Hz; set the high edge to `nan`
+to mean "up to Nyquist"), `env_Lowpass` (default 10 Hz), `env_BandpassFilterOrder`,
+`env_LowpassFilterOrder`, `env_Downsample` (the envelope's sampling rate, `env_Fs`, is
+always `Fs / env_Downsample` — it's computed on access, so it can't drift out of sync if
+you change `env_Downsample`).
 
 ## Envelope spectrum metrics
 
@@ -92,6 +94,35 @@ amplitude, so edge values (`emd_EdgeNull`) and out-of-range/outlier values
 - `imf_ratio` — power ratio between adjacent IMFs
 
 See [TECHNICAL.md](TECHNICAL.md) for the formulas behind every metric above.
+
+## Parameters and presets
+
+Every tunable property (`env_*`, `spec_*`, `emd_*`) is validated when set — bad shapes,
+ranges, or types raise an error immediately rather than producing silently wrong metrics
+later. A few properties use `nan` (or, for `emd_ImfFreqBounds`, `[]`) as a sentinel meaning
+"use the default behavior" — see each property's comment in
+[envelopeMetrics.m](envelopeMetrics.m) or [TECHNICAL.md](TECHNICAL.md).
+
+If you're running this across multiple corpora with different tuned parameters,
+`getParams`/`setParams` round-trip every tunable property to/from a plain struct, so you can
+save a corpus-specific configuration alongside your results and re-apply it later:
+
+```matlab
+% save this object's current parameters as a named preset
+myPreset = em.getParams();
+save('myCorpusPreset.mat', 'myPreset');
+
+% ...later, or in a different script:
+load('myCorpusPreset.mat', 'myPreset');
+em = envelopeMetrics(X, Fs{1}).setParams(myPreset);
+
+% envelopeMetrics.defaultParams() returns a fresh object's parameters, useful as a
+% starting point to build a new preset from:
+preset = envelopeMetrics.defaultParams();
+preset.env_Passband = [300 3400];
+preset.emd_MaxImf = 4;
+em = envelopeMetrics(X, Fs{1}).setParams(preset);
+```
 
 ## Repository layout
 

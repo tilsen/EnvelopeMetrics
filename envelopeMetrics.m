@@ -1,43 +1,90 @@
 classdef envelopeMetrics
-    
+
     properties
         X
-        Fs      
-        env_Fs
-        env_Passband = [400 4000]
-        env_Lowpass = 10
-        env_BandpassFilterOrder = 4
-        env_LowpassFilterOrder = 4
-        env_Downsample = 100
-        env_Rescale = true        
-        env_TukeywinParam = nan
-        env_EdgeAttenutation = 0.05 %period of time to attenuate edges
-        spec_Nfft = 2048
-        spec_SmoothBw = 1
-        spec_PowerBins = [1 3.5; 3.5 10]
-        spec_CentroidBins = [1 10]        
-        emd_MaxImf = 3
-        emd_EdgeNull = 0.1
-        emd_ImfFreqBounds = [0 13.16] %frequency at which magnitude response of 4th order butterworth is -10dB
-        emd_SiftRelTol = 0.1
-        emd_FreqExclusionPercentile = 99
-        verbose = false        
+        Fs
+    end
+
+    properties (Dependent)
+        env_Fs % = Fs / env_Downsample; recomputed on access, never stale
+    end
+
+    properties
+        env_Passband (1,2) double {mustBeValidPassband} = [400 4000] % [low high]; high may be nan to mean Nyquist
+        env_Lowpass (1,1) double {mustBePositive} = 10
+        env_BandpassFilterOrder (1,1) double {mustBePositive, mustBeInteger} = 4
+        env_LowpassFilterOrder (1,1) double {mustBePositive, mustBeInteger} = 4
+        env_Downsample (1,1) double {mustBePositive, mustBeInteger} = 100
+        env_Rescale (1,1) logical = true
+        env_TukeywinParam (1,1) double {mustBeNonnegativeOrNan} = nan
+        env_EdgeAttenutation (1,1) double {mustBeNonnegativeOrNan} = 0.05 %period of time to attenuate edges
+        spec_Nfft (1,1) double {mustBePositive, mustBeInteger} = 2048
+        spec_SmoothBw (1,1) double {mustBePositive} = 1
+        spec_PowerBins (:,2) double {mustBeValidBinRows} = [1 3.5; 3.5 10]
+        spec_CentroidBins (:,2) double {mustBeValidBinRows} = [1 10]
+        emd_MaxImf (1,1) double {mustBePositive, mustBeInteger} = 3
+        emd_EdgeNull (1,1) double {mustBeNonnegativeOrNan} = 0.1
+        emd_SiftRelTol (1,1) double {mustBePositive} = 0.1
+        emd_SiftMaxIterations (1,1) double {mustBeNonnegativeOrNan} = nan % nan = use emd()'s default (100)
+        emd_MaxNumExtrema (1,1) double {mustBeNonnegativeOrNan} = nan % nan = use emd()'s default (1)
+        emd_MaxEnergyRatio (1,1) double {mustBeNonnegativeOrNan} = nan % nan = use emd()'s default (20)
+        emd_Interpolation (1,1) string = "" % "" = use emd()'s default ('spline'); or "pchip"
+        emd_HhtFrequencyLimits (1,:) double {mustBeEmptyOrIncreasingPair} = [] % [] = use hht()'s default ([0 env_Fs/2])
+        emd_FreqExclusionPercentile (1,1) double {mustBeInRange0to100OrNan} = 99
+        emd_AutoImfFreqBoundsDb (1,1) double {mustBeNegative} = -10 % dB point of the envelope lowpass filter used to auto-derive emd_ImfFreqBounds
+        verbose (1,1) logical = false
+    end
+
+    properties (Access = private)
+        emd_ImfFreqBounds_ = [] % backing store; [] = auto-derive from env_Lowpass/env_LowpassFilterOrder/emd_AutoImfFreqBoundsDb
+    end
+
+    properties (Dependent)
+        emd_ImfFreqBounds % [low high]; [] (default) auto-derives from the envelope lowpass filter - see emd_AutoImfFreqBoundsDb
     end
 
     methods
         function obj = envelopeMetrics(X,Fs)
             if nargin ==0, return; end
             if ~iscell(X) || ~(any(size(X{1})==1))
-                fprintf('ERROR: input waveforms as a cell array of row or column vectors');
-                return
+                error('envelopeMetrics:InvalidInput', ...
+                    'Input waveforms must be provided as a cell array of row or column vectors.');
             end
-            if nargin==1 || ~isscalar(Fs)
-                fprintf('ERROR: sampling rate must be provided as second input');
-                return
-            end            
+            if nargin==1 || ~isscalar(Fs) || ~isnumeric(Fs) || Fs<=0
+                error('envelopeMetrics:InvalidInput', ...
+                    'Sampling rate must be provided as a positive scalar second input.');
+            end
             obj.X = cellfun(@(c){c(:)'},X);
             obj.Fs = Fs;
-            obj.env_Fs = obj.Fs/obj.env_Downsample;
+        end
+
+        function fs = get.env_Fs(obj)
+            fs = obj.Fs/obj.env_Downsample;
+        end
+
+        function bounds = get.emd_ImfFreqBounds(obj)
+            if isempty(obj.emd_ImfFreqBounds_)
+                bounds = obj.autoImfFreqBounds();
+            else
+                bounds = obj.emd_ImfFreqBounds_;
+            end
+        end
+
+        function obj = set.emd_ImfFreqBounds(obj,bounds)
+            if ~isempty(bounds)
+                mustBeEmptyOrIncreasingPair(bounds);
+            end
+            obj.emd_ImfFreqBounds_ = bounds;
+        end
+
+        function bounds = autoImfFreqBounds(obj)
+            % The frequency at which the envelope's lowpass filter (env_Lowpass,
+            % env_LowpassFilterOrder) reaches emd_AutoImfFreqBoundsDb, using the
+            % closed-form Butterworth magnitude response (independent of Fs).
+            n = obj.env_LowpassFilterOrder;
+            dB = obj.emd_AutoImfFreqBoundsDb;
+            ratio = (10^(-dB/10) - 1)^(1/(2*n));
+            bounds = [0 obj.env_Lowpass*ratio];
         end
 
         function [metrics,envelopes,times,spectra,freqs,imfs,imfw] = getMetrics(obj)
@@ -52,23 +99,23 @@ classdef envelopeMetrics
             metrics = metrics(:,colsOrdered);
         end
 
-        function [envelopes, times,passbandFiltered, lowpassFiltered,obj] = extractEnvelopes(obj)            
+        function [envelopes, times,passbandFiltered, lowpassFiltered,obj] = extractEnvelopes(obj)
             x = cellfun(@(c){c-mean(c)},obj.X);
 
-            if isnan(obj.env_Passband)
-                obj.env_Passband(2) = obj.Fs/2;
+            passband = obj.env_Passband;
+            if isnan(passband(2))
+                passband(2) = obj.Fs/2;
             end
 
-            [bbp,abp] = butter(obj.env_BandpassFilterOrder,obj.env_Passband/(obj.Fs/2));
+            [bbp,abp] = butter(obj.env_BandpassFilterOrder,passband/(obj.Fs/2));
             [blp,alp] = butter(obj.env_LowpassFilterOrder,obj.env_Lowpass/(obj.Fs/2));
-            
+
             passbandFiltered = cellfun(@(c){filtfilt(bbp,abp,c)},x);
             lowpassFiltered = cellfun(@(c){filtfilt(blp,alp,abs(c))},passbandFiltered);
-            
-            envelopes = cellfun(@(c){downsample(c,obj.env_Downsample)},lowpassFiltered);
-            obj.env_Fs = obj.Fs/obj.env_Downsample;
 
-            if obj.env_Rescale          
+            envelopes = cellfun(@(c){downsample(c,obj.env_Downsample)},lowpassFiltered);
+
+            if obj.env_Rescale
                 envelopes = cellfun(@(c){c/max(abs(c))},envelopes);
             end
             times = cellfun(@(c){(0:length(c)-1)/obj.env_Fs},envelopes);
@@ -76,10 +123,10 @@ classdef envelopeMetrics
         end
 
         function [envelopes] = attenuateEdges(obj,envelopes)
-            if ~isempty(obj.env_TukeywinParam) && ~isnan(obj.env_TukeywinParam)
+            if ~isnan(obj.env_TukeywinParam)
                 envelopes = cellfun(@(c){c.*tukeywin(length(c),obj.env_TukeywinParam)'},envelopes);
             end
-            if ~isempty(obj.env_EdgeAttenutation) && ~isnan(obj.env_EdgeAttenutation)
+            if ~isnan(obj.env_EdgeAttenutation)
                 ec = obj.env_EdgeAttenutation;
                 times = cellfun(@(c){(0:length(c)-1)/obj.env_Fs},envelopes);
                 windows = cellfun(@(c){min(c/ec,1).*min(fliplr(c)/ec,1)},times);
@@ -93,7 +140,7 @@ classdef envelopeMetrics
 
             envelopes = cellfun(@(c){c-mean(c)},envelopes);
             envelopes = cellfun(@(c){c/max(abs(c))},envelopes);
-            
+
             envelopes = obj.attenuateEdges(envelopes);
 
             N = obj.spec_Nfft;
@@ -105,10 +152,10 @@ classdef envelopeMetrics
                 warning('extractSpectra:fftUndersampled',...
                     ['envelope length exceeds number of spectral coefficients.\n' ...
                     'Spectral metrics may be unreliable.\n'...
-                    'Increase nfft, decrease signal lengths, or increase downsampling factor.\n']);                
+                    'Increase nfft, decrease signal lengths, or increase downsampling factor.\n']);
             end
             envelopesPadded = cellfun(@(c,d){[c(:)' zeros(1,N - d)]},envelopes,num2cell(envLengths));
-            
+
             spectra = cellfun(@(c){(abs(fft(c,N)).^2)/N},envelopesPadded);
             spectra = cellfun(@(c){2*(c(1:N/2))},spectra);
             freqs = obj.env_Fs*(0:N/2-1)/N;
@@ -126,6 +173,14 @@ classdef envelopeMetrics
             if nargin<3
                 envelopes = obj.extractEnvelopes();
                 [spectra,freqs] = obj.extractSpectra(envelopes);
+            end
+
+            if size(obj.spec_PowerBins,1)>1 && ...
+                    any(obj.spec_PowerBins(2:end,1) ~= obj.spec_PowerBins(1:end-1,2))
+                warning('envelopeMetrics:NonContiguousPowerBins', ...
+                    ['spec_PowerBins rows are not contiguous (row i''s high edge should ' ...
+                    'equal row i+1''s low edge); sbpr_i (power ratio of bin i to bin i+1) ' ...
+                    'may not be a meaningful adjacent-band comparison.']);
             end
 
             for i=1:size(obj.spec_PowerBins,1)
@@ -164,7 +219,7 @@ classdef envelopeMetrics
             if obj.emd_MaxImf>1
                 for i=1:obj.emd_MaxImf-1
                     metrics.("imf_ratio"+(i+1)+i) = metrics.("sumpow_imf"+(i+1))./metrics.("sumpow_imf"+i);
-                end            
+                end
             end
 
             metrics = struct2table(metrics);
@@ -172,10 +227,10 @@ classdef envelopeMetrics
         end
 
         function [imfs,imfw,report] = getImfs(obj,envelopes)
-            
-            imfs = cellfun(@(c){emd(c,"SiftRelativeTolerance", ...
-                obj.emd_SiftRelTol,'MaxNumIMF',obj.emd_MaxImf)},envelopes); 
-            
+
+            emdArgs = obj.emdOptionArgs();
+            imfs = cellfun(@(c){emd(c,emdArgs{:})},envelopes);
+
             numImfs = cellfun(@(c)size(c,2),imfs);
 
             missingImfs = zeros(1,obj.emd_MaxImf);
@@ -189,18 +244,19 @@ classdef envelopeMetrics
                 end
             end
 
+            hhtArgs = obj.hhtOptionArgs();
             for i=1:length(imfs)
                 w{i} = nan(size(imfs{i},1),obj.emd_MaxImf);
-                [~,~,times{i},w{i}(:,1:numImfs(i))] = hht(imfs{i}(:,1:numImfs(i)),obj.env_Fs);
+                [~,~,times{i},w{i}(:,1:numImfs(i))] = hht(imfs{i}(:,1:numImfs(i)),obj.env_Fs,hhtArgs{:});
             end
             w_all = vertcat(w{:});
-            nan_missing = sum(isnan(w_all));            
+            nan_missing = sum(isnan(w_all));
 
             %replace edge values with nan
-            if ~isempty(obj.emd_EdgeNull) && ~isnan(obj.emd_EdgeNull)
-                n = round(obj.env_Fs*obj.emd_EdgeNull);                
-                for i=1:length(w)                    
-                    w{i}([1:n end-n+1:end],:) = nan;                    
+            if ~isnan(obj.emd_EdgeNull)
+                n = round(obj.env_Fs*obj.emd_EdgeNull);
+                for i=1:length(w)
+                    w{i}([1:n end-n+1:end],:) = nan;
                 end
             end
 
@@ -208,17 +264,15 @@ classdef envelopeMetrics
             w_all = vertcat(w{:});
             nan_edge = sum(isnan(w_all)) - nan_missing;
 
-            %replace out-of-range frequencies with 
-            nan_outofrange = 0;
-            if ~isempty(obj.emd_ImfFreqBounds)
-                w_all(w_all<obj.emd_ImfFreqBounds(1)) = nan;
-                w_all(w_all>obj.emd_ImfFreqBounds(2)) = nan;
-                nan_outofrange = sum(isnan(w_all)) - nan_edge - nan_missing;
-            end
+            %replace out-of-range frequencies with nan
+            bounds = obj.emd_ImfFreqBounds;
+            w_all(w_all<bounds(1)) = nan;
+            w_all(w_all>bounds(2)) = nan;
+            nan_outofrange = sum(isnan(w_all)) - nan_edge - nan_missing;
 
             %percentile exclusions
             nan_prctileexc = 0;
-            if ~isempty(obj.emd_FreqExclusionPercentile) && ~isnan(obj.emd_FreqExclusionPercentile)
+            if ~isnan(obj.emd_FreqExclusionPercentile)
                 p_imf = prctile(w_all,obj.emd_FreqExclusionPercentile);
                 w_all(w_all>p_imf) = nan;
                 nan_prctileexc = sum(isnan(w_all)) - nan_outofrange - nan_edge - nan_missing;
@@ -246,5 +300,127 @@ classdef envelopeMetrics
             imfs = cellfun(@(c){c'},imfs);
 
         end
+
+        function params = getParams(obj)
+            % Every tunable analysis parameter as a plain struct, for saving
+            % alongside results (provenance) or as a reusable corpus-specific
+            % preset (see setParams). emd_ImfFreqBounds is captured as its raw
+            % setting (possibly [] for "auto"), not the resolved value, so a
+            % preset built this way keeps auto-deriving it when applied to an
+            % object with different envelope-filter properties.
+            names = envelopeMetrics.paramNames();
+            params = struct();
+            for i = 1:numel(names)
+                name = names{i};
+                if strcmp(name,'emd_ImfFreqBounds')
+                    params.(name) = obj.emd_ImfFreqBounds_;
+                else
+                    params.(name) = obj.(name);
+                end
+            end
+        end
+
+        function obj = setParams(obj,params)
+            % Apply a struct of tunable parameters (as returned by getParams,
+            % or loaded from a saved corpus-specific preset) to this object.
+            fields = fieldnames(params);
+            valid = envelopeMetrics.paramNames();
+            for i = 1:numel(fields)
+                if ~ismember(fields{i},valid)
+                    error('envelopeMetrics:InvalidParam','Unknown parameter: %s',fields{i});
+                end
+                obj.(fields{i}) = params.(fields{i});
+            end
+        end
+
     end
+
+    methods (Access = private)
+
+        function args = emdOptionArgs(obj)
+            args = {'SiftRelativeTolerance', obj.emd_SiftRelTol, 'MaxNumIMF', obj.emd_MaxImf};
+            if ~isnan(obj.emd_SiftMaxIterations)
+                args = [args, {'SiftMaxIterations', obj.emd_SiftMaxIterations}];
+            end
+            if ~isnan(obj.emd_MaxNumExtrema)
+                args = [args, {'MaxNumExtrema', obj.emd_MaxNumExtrema}];
+            end
+            if ~isnan(obj.emd_MaxEnergyRatio)
+                args = [args, {'MaxEnergyRatio', obj.emd_MaxEnergyRatio}];
+            end
+            if strlength(obj.emd_Interpolation) > 0
+                args = [args, {'Interpolation', obj.emd_Interpolation}];
+            end
+        end
+
+        function args = hhtOptionArgs(obj)
+            args = {};
+            if ~isempty(obj.emd_HhtFrequencyLimits)
+                args = {'FrequencyLimits', obj.emd_HhtFrequencyLimits};
+            end
+        end
+
+    end
+
+    methods (Static)
+
+        function names = paramNames()
+            names = {'env_Passband','env_Lowpass','env_BandpassFilterOrder', ...
+                'env_LowpassFilterOrder','env_Downsample','env_Rescale', ...
+                'env_TukeywinParam','env_EdgeAttenutation', ...
+                'spec_Nfft','spec_SmoothBw','spec_PowerBins','spec_CentroidBins', ...
+                'emd_MaxImf','emd_EdgeNull','emd_SiftRelTol', ...
+                'emd_SiftMaxIterations','emd_MaxNumExtrema','emd_MaxEnergyRatio', ...
+                'emd_Interpolation','emd_HhtFrequencyLimits', ...
+                'emd_ImfFreqBounds','emd_AutoImfFreqBoundsDb', ...
+                'emd_FreqExclusionPercentile','verbose'};
+        end
+
+        function params = defaultParams()
+            % Convenience preset equal to a freshly constructed object's parameters.
+            em = envelopeMetrics();
+            params = em.getParams();
+        end
+
+    end
+end
+
+function mustBeValidPassband(v)
+if numel(v)~=2
+    error('envelopeMetrics:InvalidPassband','env_Passband must have exactly 2 elements: [low high].');
+end
+if ~isfinite(v(1)) || v(1)<0
+    error('envelopeMetrics:InvalidPassband', ...
+        'env_Passband(1) (the low cutoff) must be a finite, non-negative number.');
+end
+if ~isnan(v(2)) && v(2)<=v(1)
+    error('envelopeMetrics:InvalidPassband', ...
+        'env_Passband(2) (the high cutoff) must be greater than env_Passband(1), or nan to use the Nyquist frequency.');
+end
+end
+
+function mustBeNonnegativeOrNan(v)
+if ~isnan(v) && v<0
+    error('envelopeMetrics:InvalidParam','Value must be non-negative, or nan to disable.');
+end
+end
+
+function mustBeValidBinRows(v)
+if isempty(v), return; end
+if any(v(:,2)<=v(:,1))
+    error('envelopeMetrics:InvalidBinRows','Each bin row must be [low high] with high > low.');
+end
+end
+
+function mustBeInRange0to100OrNan(v)
+if ~isnan(v) && (v<0 || v>100)
+    error('envelopeMetrics:InvalidParam','Value must be between 0 and 100, or nan to disable.');
+end
+end
+
+function mustBeEmptyOrIncreasingPair(v)
+if isempty(v), return; end
+if numel(v)~=2 || v(2)<=v(1)
+    error('envelopeMetrics:InvalidParam','Value must be empty, or a 2-element vector [low high] with high > low.');
+end
 end

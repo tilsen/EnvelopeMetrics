@@ -158,6 +158,10 @@ IMF from the signal and repeat for the next one. `getImfs` calls MATLAB's `emd` 
 - `emd_SiftRelTol` (default 0.1) — the relative tolerance that ends sifting for one IMF.
 - `emd_MaxImf` (default 3) — the maximum number of IMFs to extract (fewer may be returned
   if sifting terminates early; missing IMFs are padded with `NaN`).
+- `emd_SiftMaxIterations`, `emd_MaxNumExtrema`, `emd_MaxEnergyRatio`, `emd_Interpolation` —
+  optional pass-throughs to `emd`'s own `SiftMaxIterations`/`MaxNumExtrema`/
+  `MaxEnergyRatio`/`Interpolation` options; left at `nan`/`""` (MATLAB's own defaults)
+  unless set explicitly.
 
 For speech rhythm, the first IMF typically captures syllable-timescale oscillations, the
 second stress/foot-timescale oscillations, and higher-order IMFs progressively slower,
@@ -184,13 +188,25 @@ $$
 \omega_i(t) = \frac{1}{2\pi}\frac{d\phi_i(t)}{dt}
 $$
 
+(`emd_HhtFrequencyLimits` is an optional pass-through to `hht`'s own `FrequencyLimits`
+option, left at its default — the full range up to $F_{s,e}/2$ — unless set explicitly.)
+
 Instantaneous frequency is only meaningful where the IMF has non-negligible amplitude, so
 `getImfs` nulls out (sets to `NaN`) three kinds of unreliable values:
 
 1. **Edges** — the first/last `emd_EdgeNull` seconds (default 0.1 s) of every IMF, where
    the sifting/Hilbert transform is least reliable.
-2. **Out-of-range frequencies** — values outside `emd_ImfFreqBounds` (default 0–13.16 Hz,
-   chosen as the −10 dB point of the 4th-order low-pass filter used to build the envelope).
+2. **Out-of-range frequencies** — values outside `emd_ImfFreqBounds`. By default this is
+   `[]`, meaning it auto-derives from the envelope's own lowpass filter as the frequency at
+   which that filter's magnitude response reaches `emd_AutoImfFreqBoundsDb` (default −10 dB),
+   using the closed-form Butterworth magnitude response (independent of $F_s$):
+   $$
+   \text{emd\_ImfFreqBounds} = \left[0,\ \ \text{env\_Lowpass}\cdot\big(10^{-\text{dB}/10}-1\big)^{\frac{1}{2n}}\right],
+   \qquad n = \text{env\_LowpassFilterOrder}
+   $$
+   With the defaults (10 Hz, order 4, −10 dB) this evaluates to $[0, 13.16]$ Hz. Because it's
+   derived, it automatically tracks `env_Lowpass`/`env_LowpassFilterOrder` if you change
+   them — set `emd_ImfFreqBounds` to an explicit `[low high]` to override it instead.
 3. **Extreme outliers** — values above the `emd_FreqExclusionPercentile`-th percentile
    (default 99%), computed across all IMFs and time points together.
 
