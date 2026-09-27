@@ -1,4 +1,106 @@
 # EnvelopeMetrics
-code for LFFA and EMD analysis of speech amplitude envelope
 
-Download the repository and open [EnvelopeMetrics.html](EnvelopeMetrics.html) in a browser or EnvelopeMetrics.mlx in Matlab to get started.
+MATLAB code for characterizing the rhythm of speech via its amplitude envelope: Low
+Frequency Fourier Analysis (LFFA) of the envelope's power spectrum, and Empirical Mode
+Decomposition (EMD) / Hilbert-Huang analysis of its intrinsic oscillatory components.
+
+For the math behind each step (with LaTeX equations and a pipeline diagram), see
+[TECHNICAL.md](TECHNICAL.md).
+
+## Requirements
+
+- MATLAB with the **Signal Processing Toolbox** (`butter`, `filtfilt`, `emd`, `hht`) and
+  the **Statistics and Machine Learning Toolbox** (`nanmean`/`nanvar`/`nanstd`,
+  `prctile`).
+
+## Quick start
+
+```matlab
+% load audio files (sampling rates must be identical across files)
+files = ["example.wav" "example2.wav"];
+[X, Fs] = arrayfun(@(c)audioread(c), files, 'UniformOutput', false);
+
+% initialize an envelopeMetrics object and get every metric in one call
+em = envelopeMetrics(X, Fs{1});
+metrics = em.getMetrics();
+```
+
+The runnable version of everything below is [demo.m](demo.m) — it also regenerates every
+figure in this README and in `TECHNICAL.md` from `example.wav`.
+
+## The vocalic energy amplitude envelope
+
+Envelope-based rhythm analyses are usually applied to short chunks of speech (2-3 s) with
+no silent pauses. The envelope is technically a "vocalic energy amplitude envelope",
+obtained from a low-pass zero-phase filtering of the absolute value of the band-pass
+filtered waveform, so it fits the magnitude of the vocalic energy waveform better than it
+fits the original signal.
+
+```matlab
+[env, t_env] = em.extractEnvelopes();
+```
+
+![Waveform and envelope](figures/waveform_envelope.png)
+
+Key adjustable properties: `env_Passband` (default 400-4000 Hz), `env_Lowpass` (default 10
+Hz), `env_BandpassFilterOrder`, `env_LowpassFilterOrder`, `env_Downsample` (the envelope's
+sampling rate is `Fs / env_Downsample`).
+
+## Envelope spectrum metrics
+
+The envelope is zero-centered and rescaled prior to spectral analysis, then edge-attenuated
+(`env_EdgeAttenutation`, or a Tukey window via `env_TukeywinParam`) since it's generally
+non-zero at its edges. `spec_Nfft` sets the number of FFT points (must exceed the longest
+envelope's sample count — all envelopes are zero-padded to it) and `spec_SmoothBw` sets the
+spectral smoothing window.
+
+```matlab
+[spectra, freqs] = em.extractSpectra(env);
+psMetrics = em.spectralMetrics(spectra, freqs);
+```
+
+![Envelope power spectrum](figures/spectrum.png)
+
+`sbpr_n` is the ratio of power in power bin `n` to power in power bin `n+1`; `scntr_n` is
+the spectral center of gravity in centroid bin `n`. Both are computed over configurable
+frequency ranges: `spec_PowerBins` and `spec_CentroidBins` each accept any number of `[low
+high]` rows.
+
+## Empirical mode decomposition metrics
+
+The first IMF captures syllable-timescale oscillations in the envelope, the second
+stress-timescale oscillations. Higher-order IMFs capture progressively lower-frequency,
+phrase-timescale oscillations, especially for longer chunks.
+
+```matlab
+[imfs, imfw] = em.getImfs(env);
+emdMetrics = em.emdMetrics(env);
+```
+
+![Envelope and IMFs](figures/imfs.png)
+
+![IMF instantaneous frequency](figures/imf_freq.png)
+
+The number of IMFs extracted is set by `emd_MaxImf` (fewer may be returned, depending on
+`emd_SiftRelTol`). Instantaneous frequency is only meaningful where an IMF has substantial
+amplitude, so edge values (`emd_EdgeNull`) and out-of-range/outlier values
+(`emd_ImfFreqBounds`, `emd_FreqExclusionPercentile`) are excluded. The resulting metrics:
+
+- `sumpow_imf` / `pow_imf` — IMF total power / power per second
+- `mu_w`, `sd_w`, `var_w` — average, standard deviation, and variance of instantaneous
+  frequency (rhythm rate and stability on that IMF's timescale)
+- `imf_ratio` — power ratio between adjacent IMFs
+
+See [TECHNICAL.md](TECHNICAL.md) for the formulas behind every metric above.
+
+## Repository layout
+
+- [envelopeMetrics.m](envelopeMetrics.m) — the computation class (envelope extraction,
+  spectral metrics, EMD metrics).
+- [EnvelopeMetricsPlotter.m](EnvelopeMetricsPlotter.m) — plotting class used to generate
+  the figures in this README and in `TECHNICAL.md`.
+- [demo.m](demo.m) — runnable walkthrough; regenerates `figures/*.png`.
+- [figtools/](figtools/) — a vendored figure-layout utility (`stFig` and its
+  dependencies) used by the plotter.
+- [previous_version/](previous_version/) — the archived Live Script walkthrough
+  (`EnvelopeMetrics_2025-08.mlx`/`.html`) and legacy function-based code.
