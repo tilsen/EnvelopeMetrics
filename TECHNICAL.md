@@ -56,7 +56,7 @@ modulation of energy in the vocalic (roughly 400–4000 Hz) frequency band, not 
 waveform. `extractEnvelopes` computes it as:
 
 $$
-e(t) = \mathrm{LP}\Big(\big|\,\mathrm{BP}(x(t) - \bar{x})\,\big|\Big)
+e(t) = \mathrm{LP}\Big(\big|\mathrm{BP}(x(t) - \bar{x})\big|\Big)
 $$
 
 where $\mathrm{BP}(\cdot)$ is a zero-phase Butterworth band-pass filter (`butter` +
@@ -97,7 +97,7 @@ windowed or decomposed. `attenuateEdges` supports two options:
   window that ramps linearly from 0 to 1 over the first and last $t_c$ seconds:
 
 $$
-w(t) = \min\!\left(\frac{t}{t_c},\,1\right)\cdot\min\!\left(\frac{T-t}{t_c},\,1\right),
+w(t) = \min\left(\frac{t}{t_c},1\right)\cdot\min\left(\frac{T-t}{t_c},1\right),
 \qquad e(t) \leftarrow e(t)\cdot w(t)
 $$
 
@@ -111,7 +111,7 @@ zero-pads it to `spec_Nfft` samples ($N$, default 2048 — must exceed the longe
 sample count) before computing a power spectrum via FFT:
 
 $$
-S[k] = \frac{2\,\big|\mathrm{FFT}(e, N)[k]\big|^2}{N}, \qquad
+S[k] = \frac{2\big|\mathrm{FFT}(e, N)[k]\big|^2}{N}, \qquad
 f_k = \frac{k \cdot F_{s,e}}{N}, \qquad k = 0, \dots, \frac{N}{2}-1
 $$
 
@@ -121,7 +121,7 @@ edges of the smoothed spectrum, the spectrum is mirrored on both sides before fi
 the smoothed middle segment is kept:
 
 $$
-S_{\text{smooth}} = \mathrm{MovingAvg}_L\big([\,\mathrm{fliplr}(S)\ \ S\ \ \mathrm{fliplr}(S)\,]\big)\Big|_{\text{middle third}}
+S_{\text{smooth}} = \mathrm{MovingAvg}_L\big([\mathrm{fliplr}(S)\ \ S\ \ \mathrm{fliplr}(S)]\big)\Big|_{\text{middle third}}
 $$
 
 ![Envelope power spectrum](figures/spectrum.png)
@@ -138,7 +138,7 @@ band:
 $[1, 3.5)$ and $[3.5, 10)$ Hz), the power in each bin is
 
 $$
-P_i = \sum_{f \,\in\, \text{bin}_i} S(f)
+P_i = \sum_{f \in \text{bin}_i} S(f)
 $$
 
 and the metric `sbpr_i` is the ratio of power in adjacent bins:
@@ -151,7 +151,7 @@ $$
 metric `scntr_i` is the power-weighted mean frequency (center of gravity) within that bin:
 
 $$
-\text{scntr}_i = \frac{\sum_{f \,\in\, \text{bin}_i} S(f) \cdot f}{\sum_{f \,\in\, \text{bin}_i} S(f)}
+\text{scntr}_i = \frac{\sum_{f \in \text{bin}_i} S(f) \cdot f}{\sum_{f \in \text{bin}_i} S(f)}
 $$
 
 ## 5. Empirical Mode Decomposition
@@ -187,7 +187,7 @@ well-defined analytic signal and instantaneous frequency. MATLAB's `hht` forms t
 signal
 
 $$
-z_i(t) = c_i(t) + j\,\mathcal{H}\{c_i(t)\} = A_i(t)\, e^{j\phi_i(t)}
+z_i(t) = c_i(t) + j~\mathcal{H}\{c_i(t)\} = A_i(t)~e^{j\phi_i(t)}
 $$
 
 and the instantaneous frequency is the rate of change of the unwrapped phase:
