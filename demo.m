@@ -15,7 +15,7 @@ end
 %% Calculating the metrics
 % Load audio files (sampling rates must match across files) and get the full
 % metrics table in one call.
-files = ["example.wav" "example2.wav"];
+files = ["data/example1.wav" "data/example2.wav"];
 [X, Fs] = arrayfun(@(c)audioread(c), files, 'UniformOutput', false);
 
 em = envelopeMetrics(X, Fs{1});
@@ -72,3 +72,13 @@ preset.emd_MaxImf = 4;
 em2 = envelopeMetrics(X, Fs{1}).setParams(preset);
 fprintf('em2 uses %d IMFs and a %g-%g Hz passband\n', ...
     em2.emd_MaxImf, em2.env_Passband(1), em2.env_Passband(2));
+
+%% Table input
+% A table of file paths (and optional per-token t0/t1 start/end times, in
+% seconds) can be used instead of raw audio. Missing files are skipped with
+% a warning. getMetrics() then returns the input table with an added Fs
+% column, each token's envelope, and every metric as trailing columns.
+T = readtable(fullfile(repoDir, 'data', 'exampleTokensTable.csv'));
+em3 = envelopeMetrics(T);
+resultsTable = em3.getMetrics();
+disp(resultsTable);

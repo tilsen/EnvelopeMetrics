@@ -3,9 +3,7 @@
 MATLAB code for characterizing the rhythm of speech via its amplitude envelope: Low
 Frequency Fourier Analysis (LFFA) of the envelope's power spectrum, and Empirical Mode
 Decomposition (EMD) / Hilbert-Huang analysis of its intrinsic oscillatory components.
-
-For the math behind each step (with LaTeX equations and a pipeline diagram), see
-[TECHNICAL.md](TECHNICAL.md).
+For a mathematical description, see [TECHNICAL.md](TECHNICAL.md).
 
 ## Requirements
 
@@ -15,9 +13,42 @@ For the math behind each step (with LaTeX equations and a pipeline diagram), see
 
 ## Quick start
 
+In a typical workflow, you would make a table of audio file paths and 
+start/end times of tokens as below:
+
+```matlab
+% load tokens table:
+T = readtable("./data/exampleTokensTable.csv");
+head(T)
+```
+```
+             file               t0     t1 
+    _______________________    ____    ___
+
+    {'./data/example1.wav'}    0.15    0.8
+    {'./data/example2.wav'}     NaN    NaN
+```
+
+Columns `t0` and `t1` of the table indicate the start and end times of the token. These are optional,
+and when they are not specified, they default to the start and end times of
+audio file. Files that don't exist are skipped with a warning. Stereo files use only
+their first channel.
+
+Then instantiate an object of the envelopeMetrics class with the table as input,
+ and calculate the metrics:
+```matlab
+em = envelopeMetrics(T);
+metrics = em.getMetrics();
+```
+
+`getMetrics()` returns the input table itself (retaining `file`, `t0`, `t1`), with an
+added `Fs` column, each token's envelope, and every metric appended as trailing columns.
+
+Alternatively, raw audio can be input along with a sampling rate:
+
 ```matlab
 % load audio files (sampling rates must be identical across files)
-files = ["example.wav" "example2.wav"];
+files = ["data/example1.wav" "data/example2.wav"];
 [X, Fs] = arrayfun(@(c)audioread(c), files, 'UniformOutput', false);
 
 % initialize an envelopeMetrics object and get every metric in one call
@@ -131,6 +162,8 @@ em = envelopeMetrics(X, Fs{1}).setParams(preset);
 - [EnvelopeMetricsPlotter.m](EnvelopeMetricsPlotter.m) — plotting class used to generate
   the figures in this README and in `TECHNICAL.md`.
 - [demo.m](demo.m) — runnable walkthrough; regenerates `figures/*.png`.
+- [data/](data/) — example audio files and a token table (`exampleTokensTable.csv`) used
+  by the Quick start snippets and `demo.m`.
 - [figtools/](figtools/) — a vendored figure-layout utility (`stFig` and its
   dependencies) used by the plotter.
 - [previous_version/](previous_version/) — the archived Live Script walkthrough

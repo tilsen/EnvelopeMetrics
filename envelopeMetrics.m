@@ -1,8 +1,9 @@
 classdef envelopeMetrics
 
     properties
-        X
-        Fs
+        data % input table (file/t0/t1), when constructed from one; empty otherwise
+        X % per-token waveforms, one row vector per cell
+        Fs % common sampling rate of X, in Hz
     end
 
     properties (Dependent)
@@ -44,18 +45,18 @@ classdef envelopeMetrics
     end
 
     methods
-        function obj = envelopeMetrics(X,Fs)
-            if nargin ==0, return; end
-            if ~iscell(X) || ~(any(size(X{1})==1))
-                error('envelopeMetrics:InvalidInput', ...
-                    'Input waveforms must be provided as a cell array of row or column vectors.');
+        function obj = envelopeMetrics(data,Fs)
+            arguments
+                data = []
+                Fs = []
             end
-            if nargin==1 || ~isscalar(Fs) || ~isnumeric(Fs) || Fs<=0
-                error('envelopeMetrics:InvalidInput', ...
-                    'Sampling rate must be provided as a positive scalar second input.');
+            if nargin==0, return; end
+
+            if istable(data)
+                obj = obj.initFromTable(data);
+            else
+                obj = obj.initFromAudio(data,Fs);
             end
-            obj.X = cellfun(@(c){c(:)'},X);
-            obj.Fs = Fs;
         end
 
         function fs = get.env_Fs(obj)
@@ -87,7 +88,11 @@ classdef envelopeMetrics
             bounds = [0 obj.env_Lowpass*ratio];
         end
 
-        function [metrics,envelopes,times,spectra,freqs,imfs,imfw] = getMetrics(obj)
+        function [T,envelopes,times,spectra,freqs,imfs,imfw] = getMetrics(obj)
+            % A single output table: starts from the input table (file, t0,
+            % t1) when this object was constructed from one, otherwise one
+            % row per token; adds a common Fs column and each token's
+            % envelope, then appends every metric as trailing columns.
             [envelopes,times,~,~,obj] = obj.extractEnvelopes();
             [spectra, freqs] = obj.extractSpectra(envelopes);
             spectralMetrics = obj.spectralMetrics(spectra,freqs);
@@ -97,6 +102,16 @@ classdef envelopeMetrics
             colsOrdered = cols(~cellfun('isempty',(regexp(cols,'sbpr|scntr|imf_ratio', 'once'))));
             colsOrdered = [colsOrdered sort(setdiff(cols,colsOrdered))];
             metrics = metrics(:,colsOrdered);
+
+            if istable(obj.data) && width(obj.data)>0
+                T = obj.data;
+            else
+                T = table((1:numel(obj.X))','VariableNames',{'token'});
+            end
+
+            T.Fs = repmat(obj.Fs,height(T),1);
+            T.envelope = envelopes(:);
+            T = [T metrics];
         end
 
         function [envelopes, times,passbandFiltered, lowpassFiltered,obj] = extractEnvelopes(obj)
@@ -336,6 +351,79 @@ classdef envelopeMetrics
     end
 
     methods (Access = private)
+
+        function obj = initFromAudio(obj,X,Fs)
+            if ~iscell(X) || ~all(cellfun(@(c) isnumeric(c) && isvector(c),X))
+                error('envelopeMetrics:InvalidInput', ...
+                    'Input waveforms must be provided as a cell array of numeric row or column vectors.');
+            end
+            if isempty(Fs) || ~isscalar(Fs) || ~isnumeric(Fs) || Fs<=0
+                error('envelopeMetrics:InvalidInput', ...
+                    'Sampling rate must be provided as a positive scalar second input.');
+            end
+            obj.X = cellfun(@(c){c(:)'},X);
+            obj.Fs = Fs;
+            obj.data = table();
+        end
+
+        function obj = initFromTable(obj,T)
+            % Table input: one row per token, with a 'file' column of audio
+            % paths and optional 't0'/'t1' columns (start/end time in
+            % seconds; default to the whole file when absent or nan).
+            if ~ismember('file',T.Properties.VariableNames)
+                error('envelopeMetrics:InvalidInput', ...
+                    'Table input must contain a ''file'' column of audio file paths.');
+            end
+            if ~ismember('t0',T.Properties.VariableNames)
+                T.t0 = nan(height(T),1);
+            end
+            if ~ismember('t1',T.Properties.VariableNames)
+                T.t1 = nan(height(T),1);
+            end
+
+            files = string(T.file);
+            exists = isfile(files);
+            for i = find(~exists)'
+                warning('envelopeMetrics:FileNotFound', ...
+                    'File does not exist and will be skipped: %s',files(i));
+            end
+            T = T(exists,:);
+            files = files(exists);
+
+            if isempty(T)
+                error('envelopeMetrics:InvalidInput', ...
+                    'None of the files in the input table exist.');
+            end
+
+            X = cell(height(T),1);
+            fs = nan(height(T),1);
+            for i = 1:height(T)
+                [y,fsi] = audioread(files(i));
+                if size(y,2)>1
+                    y = y(:,1); % default to the first channel for stereo files
+                end
+                fs(i) = fsi;
+
+                i0 = 1;
+                i1 = size(y,1);
+                if ~isnan(T.t0(i))
+                    i0 = max(1,round(T.t0(i)*fsi)+1);
+                end
+                if ~isnan(T.t1(i))
+                    i1 = min(size(y,1),round(T.t1(i)*fsi));
+                end
+                X{i} = y(i0:i1)';
+            end
+
+            if any(fs ~= fs(1))
+                error('envelopeMetrics:InvalidInput', ...
+                    'Sampling rates must be identical across all files in the input table.');
+            end
+
+            obj.X = X;
+            obj.Fs = fs(1);
+            obj.data = T;
+        end
 
         function args = emdOptionArgs(obj)
             args = {'SiftRelativeTolerance', obj.emd_SiftRelTol, 'MaxNumIMF', obj.emd_MaxImf};
