@@ -73,7 +73,7 @@ through $\mathrm{LP}(\cdot)$, and trimmed back off immediately afterward — so 
 envelope has the same length and timing as without padding, just with cleaner edges.
 
 The envelope is then downsampled by a factor of `env_Downsample` (default 100), giving it
-its own sampling rate $F_{s,e} = F_s / \text{env\_Downsample}$, and — if `env_Rescale` is
+its own sampling rate $F_{s,e} = F_s /$ `env_Downsample`, and — if `env_Rescale` is
 true (the default) — rescaled to a maximum absolute value of 1:
 
 $$
@@ -116,7 +116,7 @@ f_k = \frac{k \cdot F_{s,e}}{N}, \qquad k = 0, \dots, \frac{N}{2}-1
 $$
 
 The raw periodogram is then smoothed with a moving-average filter of length
-$L = \lfloor N \cdot \text{spec\_SmoothBw} / F_{s,e} \rfloor$. To avoid distorting the
+$L = \lfloor N \cdot B / F_{s,e} \rfloor$, where $B$ is `spec_SmoothBw`. To avoid distorting the
 edges of the smoothed spectrum, the spectrum is mirrored on both sides before filtering and
 the smoothed middle segment is kept:
 
@@ -207,10 +207,11 @@ Instantaneous frequency is only meaningful where the IMF has non-negligible ampl
 2. **Out-of-range frequencies** — values outside `emd_ImfFreqBounds`. By default this is
    `[]`, meaning it auto-derives from the envelope's own lowpass filter as the frequency at
    which that filter's magnitude response reaches `emd_AutoImfFreqBoundsDb` (default −10 dB),
-   using the closed-form Butterworth magnitude response (independent of $F_s$):
+   using the closed-form Butterworth magnitude response (independent of $F_s$). With $L$ =
+   `env_Lowpass`, $d$ = `emd_AutoImfFreqBoundsDb`, and $n$ = `env_LowpassFilterOrder`,
+   `emd_ImfFreqBounds` is:
    $$
-   \text{emd\_ImfFreqBounds} = \left[0,\ \ \text{env\_Lowpass}\cdot\big(10^{-\text{dB}/10}-1\big)^{\frac{1}{2n}}\right],
-   \qquad n = \text{env\_LowpassFilterOrder}
+   \left[0,\ \ L\cdot\big(10^{-d/10}-1\big)^{\frac{1}{2n}}\right]
    $$
    With the defaults (10 Hz, order 4, −10 dB) this evaluates to $[0, 13.16]$ Hz. Because it's
    derived, it automatically tracks `env_Lowpass`/`env_LowpassFilterOrder` if you change
@@ -226,29 +227,33 @@ stress-level rhythm.*
 
 ## 7. EMD metrics
 
-For each IMF $i$ (up to `emd_MaxImf`), `emdMetrics` computes:
+For each IMF $i$ (up to `emd_MaxImf`), `emdMetrics` computes, writing $P_i$ for `sumpow_imf`
+and $Q_i$ for `pow_imf`:
 
 $$
-\text{sumpow\_imf}_i = \sum_t |c_i(t)|
+P_i = \sum_t |c_i(t)|
 \qquad\qquad
-\text{pow\_imf}_i = \text{sumpow\_imf}_i \cdot \frac{F_{s,e}}{N_i}
+Q_i = P_i \cdot \frac{F_{s,e}}{N_i}
 $$
 
-where $N_i$ is the number of samples in $c_i$ — i.e. `pow_imf` is a power-per-second rate,
-independent of the envelope's duration, while `sumpow_imf` is not.
+where $N_i$ is the number of samples in $c_i$ — i.e. $Q_i$ (`pow_imf`) is a power-per-second
+rate, independent of the envelope's duration, while $P_i$ (`sumpow_imf`) is not.
 
 $$
-\text{mu\_w}_i = \overline{\omega_i(t)}
+M_i = \overline{\omega_i(t)}
 \qquad
-\text{var\_w}_i = \mathrm{Var}\big[\omega_i(t)\big]
+V_i = \mathrm{Var}\big[\omega_i(t)\big]
 \qquad
-\text{sd\_w}_i = \sqrt{\text{var\_w}_i}
+D_i = \sqrt{V_i}
 $$
 
-(means/variances computed ignoring the `NaN`-nulled samples from step 6), reflecting the
-average rate and the stability of the rhythm on that IMF's timescale. Finally, adjacent
-IMFs' power is compared via:
+($M_i$, $V_i$, $D_i$ are returned as `mu_w`, `var_w`, `sd_w` respectively; means/variances
+computed ignoring the `NaN`-nulled samples from step 6), reflecting the average rate and the
+stability of the rhythm on that IMF's timescale. Finally, adjacent IMFs' power is compared
+via:
 
 $$
-\text{imf\_ratio}_{i+1,i} = \frac{\text{sumpow\_imf}_{i+1}}{\text{sumpow\_imf}_i}
+R_{i+1,i} = \frac{P_{i+1}}{P_i}
 $$
+
+($R_{i+1,i}$ is returned as `imf_ratio`.)
