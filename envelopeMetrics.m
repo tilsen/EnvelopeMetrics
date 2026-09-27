@@ -2,8 +2,12 @@ classdef envelopeMetrics
 
     properties
         data % input table (file/t0/t1), when constructed from one; empty otherwise
-        X % per-token waveforms, one row vector per cell
+        X % per-token waveforms, one row vector per cell (valid tokens only)
         Fs % common sampling rate of X, in Hz
+    end
+
+    properties (Access = private)
+        valid_ = [] % logical, one per row of data; false = file/channel skipped (getMetrics() fills that row with nan)
     end
 
     properties (Dependent)
@@ -95,7 +99,9 @@ classdef envelopeMetrics
             % t1) when this object was constructed from one, otherwise one
             % row per token; adds a common Fs column and appends every
             % metric as trailing columns. If includeEnvelope is true, envFs
-            % and each token's envelope are appended last.
+            % and each token's envelope are appended last. Rows whose file
+            % or channel was invalid (see initFromTable) are retained, with
+            % nan for Fs, every metric, and (if included) envFs/envelope.
             [envelopes,times,~,~,obj] = obj.extractEnvelopes();
             [spectra, freqs] = obj.extractSpectra(envelopes);
             spectralMetrics = obj.spectralMetrics(spectra,freqs);
@@ -108,16 +114,29 @@ classdef envelopeMetrics
 
             if istable(obj.data) && width(obj.data)>0
                 T = obj.data;
+                valid = obj.valid_;
             else
                 T = table((1:numel(obj.X))','VariableNames',{'token'});
+                valid = true(height(T),1);
             end
+            n = height(T);
 
-            T.Fs = repmat(obj.Fs,height(T),1);
-            T = [T metrics];
+            Fs_col = nan(n,1);
+            Fs_col(valid) = obj.Fs;
+            T.Fs = Fs_col;
+
+            metricsFull = array2table(nan(n,width(metrics)),'VariableNames',metrics.Properties.VariableNames);
+            metricsFull(valid,:) = metrics;
+            T = [T metricsFull];
 
             if obj.includeEnvelope
-                T.envFs = repmat(obj.env_Fs,height(T),1);
-                T.envelope = envelopes(:);
+                envFs_col = nan(n,1);
+                envFs_col(valid) = obj.env_Fs;
+                T.envFs = envFs_col;
+
+                envelopeCol = cell(n,1);
+                envelopeCol(valid) = envelopes(:);
+                T.envelope = envelopeCol;
             end
         end
 
@@ -380,13 +399,17 @@ classdef envelopeMetrics
             obj.X = cellfun(@(c){c(:)'},X);
             obj.Fs = Fs;
             obj.data = table();
+            obj.valid_ = true(numel(X),1);
         end
 
         function obj = initFromTable(obj,T)
             % Table input: one row per token, with a 'file' column of audio
             % paths and optional 't0'/'t1' columns (start/end time in
             % seconds; default to the whole file when absent or nan) and an
-            % optional 'channel' column (1-based; defaults to 1).
+            % optional 'channel' column (1-based; defaults to 1). Rows whose
+            % file doesn't exist or whose channel is invalid are kept in
+            % data (with a warning), but excluded from X; getMetrics() fills
+            % those rows with nan rather than dropping them.
             if ~ismember('file',T.Properties.VariableNames)
                 error('envelopeMetrics:InvalidInput', ...
                     'Table input must contain a ''file'' column of audio file paths.');
@@ -410,32 +433,30 @@ classdef envelopeMetrics
                     'File does not exist and will be skipped: %s',files(i));
             end
 
-            validChannel = true(height(T),1);
+            valid = exists;
             for i = find(exists)'
                 numChannels = audioinfo(files(i)).NumChannels;
                 if T.channel(i)<1 || T.channel(i)>numChannels
-                    validChannel(i) = false;
+                    valid(i) = false;
                     warning('envelopeMetrics:InvalidChannel', ...
                         'File has %d channel(s); requested channel %d does not exist and will be skipped: %s', ...
                         numChannels,T.channel(i),files(i));
                 end
             end
 
-            keep = exists & validChannel;
-            T = T(keep,:);
-            files = files(keep);
-
-            if isempty(T)
+            if ~any(valid)
                 error('envelopeMetrics:InvalidInput', ...
                     'None of the files in the input table exist with a valid channel.');
             end
 
-            X = cell(height(T),1);
-            fs = nan(height(T),1);
-            for i = 1:height(T)
+            validIx = find(valid);
+            X = cell(numel(validIx),1);
+            fs = nan(numel(validIx),1);
+            for k = 1:numel(validIx)
+                i = validIx(k);
                 [y,fsi] = audioread(files(i));
                 y = y(:,T.channel(i));
-                fs(i) = fsi;
+                fs(k) = fsi;
 
                 i0 = 1;
                 i1 = size(y,1);
@@ -445,7 +466,7 @@ classdef envelopeMetrics
                 if ~isnan(T.t1(i))
                     i1 = min(size(y,1),round(T.t1(i)*fsi));
                 end
-                X{i} = y(i0:i1)';
+                X{k} = y(i0:i1)';
             end
 
             if any(fs ~= fs(1))
@@ -456,6 +477,7 @@ classdef envelopeMetrics
             obj.X = X;
             obj.Fs = fs(1);
             obj.data = T;
+            obj.valid_ = valid;
         end
 
         function args = emdOptionArgs(obj)

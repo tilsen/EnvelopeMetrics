@@ -47,8 +47,8 @@ head(T)
 Columns `t0` and `t1` of the table indicate the start and end times of the token. These are optional,
 and when they are not specified, they default to the start and end times of
 audio file. An optional `channel` column selects which audio channel to read (1-based;
-defaults to 1). Files that don't exist, or whose requested channel doesn't exist, are
-skipped with a warning.
+defaults to 1). A row whose file doesn't exist, or whose requested channel doesn't exist, is
+skipped (with a warning) but kept in the output — see below.
 
 Then instantiate an object of the `envelopeMetrics` class with the table as input,
  and calculate the metrics:
@@ -57,15 +57,18 @@ em = envelopeMetrics(T);
 metrics = em.getMetrics();
 ```
 ```
-             file               t0     t1     channel     Fs                                                                                         envelope                                                                                        sbpr_1     scntr_1    imf_ratio21    imf_ratio32    mu_w1     mu_w2     mu_w3     pow_imf1    pow_imf2    pow_imf3     sd_w1     sd_w2      sd_w3     sumpow_imf1    sumpow_imf2    sumpow_imf3    var_w1      var_w2     var_w3 
-    _______________________    ____    ___    _______    _____    _______________________________________________________________________________________________________________________________________________________________________________    _______    _______    ___________    ___________    ______    ______    ______    ________    ________    ________    _______    ______    _______    ___________    ___________    ___________    _______    ________    _______
+             file               t0     t1     channel     Fs      sbpr_1     scntr_1    imf_ratio21    imf_ratio32    mu_w1     mu_w2     mu_w3     pow_imf1    pow_imf2    pow_imf3     sd_w1     sd_w2      sd_w3     sumpow_imf1    sumpow_imf2    sumpow_imf3    var_w1      var_w2     var_w3 
+    _______________________    ____    ___    _______    _____    _______    _______    ___________    ___________    ______    ______    ______    ________    ________    ________    _______    ______    _______    ___________    ___________    ___________    _______    ________    _______
 
-    {'./data/example1.wav'}    0.15    0.8       1       22050    {[ 0.0024 0.0017 9.2233e-04 3.7123e-05 -7.6058e-04 -0.0013 -0.0012 -1.7040e-04 0.0021 0.0061 0.0122 0.0207 0.0322 0.0467 0.0646 0.0856 0.1097 0.1363 0.1648  ] (1144 double)}    0.38793    4.7854       0.96428            NaN      4.9163    1.3269       NaN     37.575      36.233         NaN     0.87669    0.2511        NaN      24.539         23.662            NaN       0.76858    0.063053        NaN
-    {'./data/example2.wav'}     NaN    NaN       1       22050    {[0.0076 0.0073 0.0086 0.0124 0.0195 0.0308 0.0471 0.0692 0.0977 0.1330 0.1752 0.2241 0.2792 0.3397 0.4046 0.4724 0.5418 0.6111 0.6787 0.7431 0.8027 0.8561  ] (1459 double)}     1.1868     3.717       0.84626        0.78364      5.0478    2.1908    1.1189     19.229      16.272      12.752      2.6619    0.9782    0.35159      40.027         33.873         26.544        7.0857     0.95687    0.12362
+    {'./data/example1.wav'}    0.15    0.8       1       22050    0.38793    4.7854       0.96428            NaN      4.9163    1.3269       NaN     37.575      36.233         NaN     0.87669    0.2511        NaN      24.539         23.662            NaN       0.76858    0.063053        NaN
+    {'./data/example2.wav'}     NaN    NaN       1       22050     1.1868     3.717       0.84626        0.78364      5.0478    2.1908    1.1189     19.229      16.272      12.752      2.6619    0.9782    0.35159      40.027         33.873         26.544        7.0857     0.95687    0.12362
 ```
 
-`getMetrics()` returns the input table itself (retaining `file`, `t0`, `t1`, `channel`), with
-an added `Fs` column, each token's envelope, and every metric appended as trailing columns.
+`getMetrics()` returns the input table itself (retaining `file`, `t0`, `t1`, `channel`), with an
+added `Fs` column and every metric appended as trailing columns. A row whose file doesn't exist,
+or whose requested channel doesn't exist, is kept (not dropped) with `nan` in `Fs` and every
+metric column. Setting `em.includeEnvelope = true` before calling `getMetrics()` appends two more
+columns at the very end — `envFs` and each token's `envelope` — with `nan`/`[]` for such rows.
 
 Alternatively, raw audio can be input along with a sampling rate:
 
@@ -85,7 +88,7 @@ figure in this README and in `TECHNICAL.md` from `example.wav`.
 ## The vocalic energy amplitude envelope
 
 Envelope-based rhythm analyses are usually applied to short chunks of speech (2-3 s) with
-no silent pauses. The envelope is technically a "vocalic energy amplitude envelope",
+no silent pauses. The envelope obtained with default parameters should be described as a "vocalic energy amplitude envelope",
 obtained from a low-pass zero-phase filtering of the absolute value of the band-pass
 filtered waveform, so it fits the magnitude of the vocalic energy waveform better than it
 fits the original signal.
@@ -127,7 +130,7 @@ high]` rows.
 
 ## Empirical mode decomposition metrics
 
-The first IMF captures syllable-timescale oscillations in the envelope, the second
+In typical applications (see Tips and caveats), the first IMF captures syllable-timescale oscillations in the envelope, the second
 stress-timescale oscillations. Higher-order IMFs capture progressively lower-frequency,
 phrase-timescale oscillations, especially for longer chunks.
 
@@ -159,7 +162,7 @@ later. A few properties use `nan` (or, for `emd_ImfFreqBounds`, `[]`) as a senti
 [envelopeMetrics.m](envelopeMetrics.m) or [TECHNICAL.md](TECHNICAL.md).
 
 If you're running this across multiple corpora with different tuned parameters,
-`getParams`/`setParams` round-trip every tunable property to/from a plain struct, so you can
+`getParams`/`setParams` store/update every tunable property in a plain struct, so you can
 save a corpus-specific configuration alongside your results and re-apply it later:
 
 ```matlab
@@ -169,14 +172,14 @@ save('myCorpusPreset.mat', 'myPreset');
 
 % ...later, or in a different script:
 load('myCorpusPreset.mat', 'myPreset');
-em = envelopeMetrics(X, Fs{1}).setParams(myPreset);
+em = envelopeMetrics(T).setParams(myPreset);
 
 % envelopeMetrics.defaultParams() returns a fresh object's parameters, useful as a
 % starting point to build a new preset from:
 preset = envelopeMetrics.defaultParams();
 preset.env_Passband = [300 3400];
 preset.emd_MaxImf = 4;
-em = envelopeMetrics(X, Fs{1}).setParams(preset);
+em = envelopeMetrics(T).setParams(preset);
 ```
 
 ## Repository layout
@@ -188,46 +191,47 @@ em = envelopeMetrics(X, Fs{1}).setParams(preset);
 - [demo.m](demo.m) — runnable walkthrough; regenerates `figures/*.png`.
 - [data/](data/) — example audio files and a token table (`exampleTokensTable.csv`) used
   by the Quick start snippets and `demo.m`.
-- [figtools/](figtools/) — a vendored figure-layout utility (`stFig` and its
+- [figtools/](figtools/) — utility classes/functions (`stFig` and its
   dependencies) used by the plotter.
-- [previous_version/](previous_version/) — the archived Live Script walkthrough
-  (`EnvelopeMetrics_2025-08.mlx`/`.html`) and legacy function-based code.
 - [CITATION.cff](CITATION.cff) — citation metadata for this repository.
 
 ## Tips and caveats
 
-- *IMF metric interpretations*: with default analysis parameters, imf1 and imf2 obtained from
+- *EMD-based metric interpretations*: with default analysis parameters, imf1 and imf2 obtained from
 fluent adult speech can loosely be associated with syllable and stress-timescale periodicities,
 respectively. However, there is no ground-truth separation between sub-syllabic (i.e. segmental),
-syllabic, stress-related, and supra-stress (i.e. phrasal) timescales, and so this distinction
-hinges on parameterization of the algorithm.
+syllabic, stress-related, and supra-stress (i.e. phrasal) timescales, and so these associations
+hinge on parameterization of the algorithm.
 
 - *Envelope parameterization*: in general, the vocalic energy amplitude
 envelope captures some energy fluctuations associated with segmental acoustic energy, and may capture
 fluctuations associated with supra-stress timescale when tokens are sufficiently long. Lowering the
 cutoff of the low-pass filter (`env_Lowpass`) can diminish the contribution of segment-timescale
-fluctuations in the envelope, and accordingly in imf1, but lowering it too much will diminish
+fluctuations in the envelope, and accordingly their contributions to imf1 and imf1-derived measures, but lowering it too much will diminish
 syllable-timescale fluctuations, which are often of interest. The default is `10 Hz`, which
-corresponds to 100 ms. Note that because a Butterworth filter is used for low-pass filtering, the
-attenuation roll-off is relatively gradual, which means that some energy beyond the cutoff gets
+corresponds to a 100 ms period. Note that because a Butterworth filter is used for low-pass filtering, the
+attenuation roll-off is relatively gradual, which means that some energy from frequency components above the cutoff gets
 retained in the envelope.
 
 - *Phrasal timescale periodicity*: imf3 may or may not be identified by the EMD algorithm, and can roughly be associated
 with phrase- (or supra-stress-) timescale periodicity. Longer utterances are more likely
-to result in meaningful imf3. imf2 is less meaningful for short tokens (< 2s).
+to result in meaningful imf3.
 
 - *Token length*: Metrics from longer tokens (> 3s) will blur rhythmic variation that occurs
 within the utterance. There is an inherent trade-off associated with token length:
-lower-frequency imfs (i.e. imf2, and imf3) become more meaningful as token length increases,
+lower-frequency imfs (i.e. imf2, and imf3) become more meaningful (in the sense that they reflect
+an actual periodic component of the envelope) as token length increases,
 but increasing token length also results in the metrics reflecting averages over portions of an utterance
 that may have different rhythmic characteristics.
 
 - *Edge artefacts*: zero-padding of the waveform and/or edge-attenuation of the envelope
-are important. If token extents (`t0` and `t1` in the input table) coincide with active speech,
-use zero-padding (e.g. `env_ZeroPad=0.05`) to diminish edge artefacts.
+are used to diminish the influence of edge artefacts
+ (i.e. transitions from speech to non-speech portions of the waveform). 
+If token extents (`t0` and `t1` in the input table) coincide with such transitions, or occur
+in the middle of active speech, zero-padding (e.g. `env_ZeroPad=0.05`) can be used to diminish edge effects.
 
-- *Token-internal pauses/disfluency*: When tokens include disfluencies or internal pauses,
-rhythm metrics can no longer be directly interpreted as representing "syllable" and "stress"-timescale
+- *Token-internal pauses/disfluency*: When tokens include disfluencies or internal silences,
+rhythm metrics can no longer be reliably interpreted as representing "syllable" and "stress"-timescale
 periodicity. In these circumstances, the metrics can still be used to characterize
 rhythm, but specifically, it is a more generic notion of "rhythm" that conflates
-speech activity and/or disfluency with syllable- and stress-periodicity.
+speech activity and/or disfluency with syllable-, stress-, and phrasal-periodicity.
