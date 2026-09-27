@@ -24,7 +24,7 @@ classdef envelopeMetrics
         env_ZeroPad (1,1) double {mustBeNonnegative} = 0 % seconds of zero-padding appended to each end of the waveform before filtering, then trimmed back off after the low-pass filter; reduces filtfilt edge transients for short tokens
         env_TukeywinParam (1,1) double {mustBeNonnegativeOrNan} = nan
         env_EdgeAttenutation (1,1) double {mustBeNonnegativeOrNan} = 0.05 %period of time to attenuate edges
-        spec_Nfft (1,1) double {mustBePositive, mustBeInteger} = 2048
+        spec_Nfft (1,1) double {mustBePositive, mustBeInteger, mustBeEven} = 2048
         spec_SmoothBw (1,1) double {mustBePositive} = 1
         spec_PowerBins (:,2) double {mustBeValidBinRows} = [1 3.5; 3.5 10]
         spec_CentroidBins (:,2) double {mustBeValidBinRows} = [1 10]
@@ -406,10 +406,13 @@ classdef envelopeMetrics
             % Table input: one row per token, with a 'file' column of audio
             % paths and optional 't0'/'t1' columns (start/end time in
             % seconds; default to the whole file when absent or nan) and an
-            % optional 'channel' column (1-based; defaults to 1). Rows whose
-            % file doesn't exist or whose channel is invalid are kept in
-            % data (with a warning), but excluded from X; getMetrics() fills
-            % those rows with nan rather than dropping them.
+            % optional 'channel' column (1-based; defaults to 1; must be an
+            % integer, or this errors immediately). Rows whose file doesn't
+            % exist, whose channel is out of range, or whose t0/t1 yield an
+            % empty or invalid segment (t1<=t0, once resolved against the
+            % actual file duration) are kept in data (with a warning), but
+            % excluded from X; getMetrics() fills those rows with nan rather
+            % than dropping them.
             if ~ismember('file',T.Properties.VariableNames)
                 error('envelopeMetrics:InvalidInput', ...
                     'Table input must contain a ''file'' column of audio file paths.');
@@ -424,6 +427,10 @@ classdef envelopeMetrics
                 T.channel = ones(height(T),1);
             else
                 T.channel(isnan(T.channel)) = 1;
+            end
+            if any(T.channel ~= round(T.channel))
+                error('envelopeMetrics:InvalidInput', ...
+                    'channel must contain integer values.');
             end
 
             files = string(T.file);
@@ -452,6 +459,7 @@ classdef envelopeMetrics
             validIx = find(valid);
             X = cell(numel(validIx),1);
             fs = nan(numel(validIx),1);
+            keep = true(numel(validIx),1);
             for k = 1:numel(validIx)
                 i = validIx(k);
                 [y,fsi] = audioread(files(i));
@@ -466,7 +474,22 @@ classdef envelopeMetrics
                 if ~isnan(T.t1(i))
                     i1 = min(size(y,1),round(T.t1(i)*fsi));
                 end
+                if i1<=i0
+                    keep(k) = false;
+                    valid(i) = false;
+                    warning('envelopeMetrics:InvalidTimeRange', ...
+                        'File %s: t0/t1 (%.3g/%.3g s) yield an empty or invalid segment and will be skipped.', ...
+                        files(i),T.t0(i),T.t1(i));
+                    continue
+                end
                 X{k} = y(i0:i1)';
+            end
+            X = X(keep);
+            fs = fs(keep);
+
+            if isempty(X)
+                error('envelopeMetrics:InvalidInput', ...
+                    'None of the files in the input table exist with a valid channel and time range.');
             end
 
             if any(fs ~= fs(1))
@@ -532,13 +555,19 @@ function mustBeValidPassband(v)
 if numel(v)~=2
     error('envelopeMetrics:InvalidPassband','env_Passband must have exactly 2 elements: [low high].');
 end
-if ~isfinite(v(1)) || v(1)<0
+if ~isfinite(v(1)) || v(1)<=0
     error('envelopeMetrics:InvalidPassband', ...
-        'env_Passband(1) (the low cutoff) must be a finite, non-negative number.');
+        'env_Passband(1) (the low cutoff) must be a finite, positive number.');
 end
 if ~isnan(v(2)) && v(2)<=v(1)
     error('envelopeMetrics:InvalidPassband', ...
         'env_Passband(2) (the high cutoff) must be greater than env_Passband(1), or nan to use the Nyquist frequency.');
+end
+end
+
+function mustBeEven(v)
+if mod(v,2)~=0
+    error('envelopeMetrics:InvalidParam','spec_Nfft must be an even integer.');
 end
 end
 
