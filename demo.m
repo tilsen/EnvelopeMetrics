@@ -69,8 +69,8 @@ disp(emdMetrics);
 close([fig1.Handle fig2.Handle fig3.Handle fig4.Handle fig5.Handle]);
 
 %% Parameters and presets
-% Every tunable property round-trips through getParams/setParams as a plain
-% struct, so a corpus-specific configuration can be saved and reapplied later.
+% getParams/setParams store/update every tunable property in a plain struct,
+% so a corpus-specific configuration can be saved and reapplied later.
 preset = envelopeMetrics.defaultParams();
 preset.env_Passband = [300 3400];
 preset.emd_MaxImf = 4;

@@ -82,8 +82,10 @@ em = envelopeMetrics(X, Fs{1});
 metrics = em.getMetrics();
 ```
 
-The runnable version of everything below is [demo.m](demo.m) — it also regenerates every
-figure in this README and in `TECHNICAL.md` from `example.wav`.
+The rest of this document continues with the `em` object from the raw-audio snippet above,
+since that's what [demo.m](demo.m) uses to generate the figures below. The runnable version
+of everything below is `demo.m` — it also regenerates every figure in this README and in
+`TECHNICAL.md` from `example.wav`.
 
 ## The vocalic energy amplitude envelope
 
