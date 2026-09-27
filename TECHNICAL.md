@@ -26,10 +26,12 @@ Hilbert–Huang Transform (HHT). For a quick-start guide to using the code, see
 ```mermaid
 flowchart TD
     A["Raw waveform x(t)"] --> B["Demean"]
-    B --> C["Band-pass Butterworth filter (env_Passband, env_BandpassFilterOrder)"]
+    B --> B2["Zero-pad each end by env_ZeroPad seconds (if > 0)"]
+    B2 --> C["Band-pass Butterworth filter (env_Passband, env_BandpassFilterOrder)"]
     C --> D["Rectify: abs(·)"]
     D --> E["Low-pass Butterworth filter (env_Lowpass, env_LowpassFilterOrder)"]
-    E --> F["Downsample by env_Downsample -> envelope e(t) at env_Fs"]
+    E --> E2["Trim the env_ZeroPad padding back off"]
+    E2 --> F["Downsample by env_Downsample -> envelope e(t) at env_Fs"]
     F --> G["Rescale by max(abs(e)) if env_Rescale"]
     G --> H["Edge attenuation (env_TukeywinParam / env_EdgeAttenutation)"]
 
@@ -63,6 +65,12 @@ and $\mathrm{LP}(\cdot)$ is a zero-phase Butterworth low-pass filter (order
 `env_LowpassFilterOrder`, cutoff `env_Lowpass`, default 10 Hz). Zero-phase filtering
 (`filtfilt`) is used throughout so the envelope's timing isn't shifted relative to the
 waveform.
+
+`filtfilt`'s edge transients grow relative to a short token, since both filters need time
+to settle. If `env_ZeroPad` (default 0, disabled) is set to a duration in seconds, that
+many zeros are appended to each end of $x(t) - \bar{x}$ before $\mathrm{BP}(\cdot)$, carried
+through $\mathrm{LP}(\cdot)$, and trimmed back off immediately afterward — so the returned
+envelope has the same length and timing as without padding, just with cleaner edges.
 
 The envelope is then downsampled by a factor of `env_Downsample` (default 100), giving it
 its own sampling rate $F_{s,e} = F_s / \text{env\_Downsample}$, and — if `env_Rescale` is

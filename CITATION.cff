@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "EnvelopeMetrics"
+abstract: >-
+  MATLAB code for quantifying the rhythm of speech via its amplitude envelope:
+  Low Frequency Fourier Analysis (LFFA) of the envelope's power spectrum, and
+  Empirical Mode Decomposition (EMD) / Hilbert-Huang analysis of its intrinsic
+  oscillatory components.
+authors:
+  - family-names: "Tilsen"
+    given-names: "Sam"
+repository-code: "https://github.com/tilsen/EnvelopeMetrics"
+type: software

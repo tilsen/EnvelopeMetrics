@@ -17,6 +17,7 @@ classdef envelopeMetrics
         env_LowpassFilterOrder (1,1) double {mustBePositive, mustBeInteger} = 4
         env_Downsample (1,1) double {mustBePositive, mustBeInteger} = 100
         env_Rescale (1,1) logical = true
+        env_ZeroPad (1,1) double {mustBeNonnegative} = 0 % seconds of zero-padding appended to each end of the waveform before filtering, then trimmed back off after the low-pass filter; reduces filtfilt edge transients for short tokens
         env_TukeywinParam (1,1) double {mustBeNonnegativeOrNan} = nan
         env_EdgeAttenutation (1,1) double {mustBeNonnegativeOrNan} = 0.05 %period of time to attenuate edges
         spec_Nfft (1,1) double {mustBePositive, mustBeInteger} = 2048
@@ -33,6 +34,7 @@ classdef envelopeMetrics
         emd_HhtFrequencyLimits (1,:) double {mustBeEmptyOrIncreasingPair} = [] % [] = use hht()'s default ([0 env_Fs/2])
         emd_FreqExclusionPercentile (1,1) double {mustBeInRange0to100OrNan} = 99
         emd_AutoImfFreqBoundsDb (1,1) double {mustBeNegative} = -10 % dB point of the envelope lowpass filter used to auto-derive emd_ImfFreqBounds
+        includeEnvelope (1,1) logical = false % if true, getMetrics() appends envFs and envelope as the last two columns of its output table
         verbose (1,1) logical = false
     end
 
@@ -91,8 +93,9 @@ classdef envelopeMetrics
         function [T,envelopes,times,spectra,freqs,imfs,imfw] = getMetrics(obj)
             % A single output table: starts from the input table (file, t0,
             % t1) when this object was constructed from one, otherwise one
-            % row per token; adds a common Fs column and each token's
-            % envelope, then appends every metric as trailing columns.
+            % row per token; adds a common Fs column and appends every
+            % metric as trailing columns. If includeEnvelope is true, envFs
+            % and each token's envelope are appended last.
             [envelopes,times,~,~,obj] = obj.extractEnvelopes();
             [spectra, freqs] = obj.extractSpectra(envelopes);
             spectralMetrics = obj.spectralMetrics(spectra,freqs);
@@ -110,12 +113,21 @@ classdef envelopeMetrics
             end
 
             T.Fs = repmat(obj.Fs,height(T),1);
-            T.envelope = envelopes(:);
             T = [T metrics];
+
+            if obj.includeEnvelope
+                T.envFs = repmat(obj.env_Fs,height(T),1);
+                T.envelope = envelopes(:);
+            end
         end
 
         function [envelopes, times,passbandFiltered, lowpassFiltered,obj] = extractEnvelopes(obj)
             x = cellfun(@(c){c-mean(c)},obj.X);
+
+            padN = round(obj.env_ZeroPad*obj.Fs);
+            if padN>0
+                x = cellfun(@(c){[zeros(1,padN) c zeros(1,padN)]},x);
+            end
 
             passband = obj.env_Passband;
             if isnan(passband(2))
@@ -127,6 +139,10 @@ classdef envelopeMetrics
 
             passbandFiltered = cellfun(@(c){filtfilt(bbp,abp,c)},x);
             lowpassFiltered = cellfun(@(c){filtfilt(blp,alp,abs(c))},passbandFiltered);
+
+            if padN>0
+                lowpassFiltered = cellfun(@(c){c(padN+1:end-padN)},lowpassFiltered);
+            end
 
             envelopes = cellfun(@(c){downsample(c,obj.env_Downsample)},lowpassFiltered);
 
@@ -369,7 +385,8 @@ classdef envelopeMetrics
         function obj = initFromTable(obj,T)
             % Table input: one row per token, with a 'file' column of audio
             % paths and optional 't0'/'t1' columns (start/end time in
-            % seconds; default to the whole file when absent or nan).
+            % seconds; default to the whole file when absent or nan) and an
+            % optional 'channel' column (1-based; defaults to 1).
             if ~ismember('file',T.Properties.VariableNames)
                 error('envelopeMetrics:InvalidInput', ...
                     'Table input must contain a ''file'' column of audio file paths.');
@@ -380,6 +397,11 @@ classdef envelopeMetrics
             if ~ismember('t1',T.Properties.VariableNames)
                 T.t1 = nan(height(T),1);
             end
+            if ~ismember('channel',T.Properties.VariableNames)
+                T.channel = ones(height(T),1);
+            else
+                T.channel(isnan(T.channel)) = 1;
+            end
 
             files = string(T.file);
             exists = isfile(files);
@@ -387,21 +409,32 @@ classdef envelopeMetrics
                 warning('envelopeMetrics:FileNotFound', ...
                     'File does not exist and will be skipped: %s',files(i));
             end
-            T = T(exists,:);
-            files = files(exists);
+
+            validChannel = true(height(T),1);
+            for i = find(exists)'
+                numChannels = audioinfo(files(i)).NumChannels;
+                if T.channel(i)<1 || T.channel(i)>numChannels
+                    validChannel(i) = false;
+                    warning('envelopeMetrics:InvalidChannel', ...
+                        'File has %d channel(s); requested channel %d does not exist and will be skipped: %s', ...
+                        numChannels,T.channel(i),files(i));
+                end
+            end
+
+            keep = exists & validChannel;
+            T = T(keep,:);
+            files = files(keep);
 
             if isempty(T)
                 error('envelopeMetrics:InvalidInput', ...
-                    'None of the files in the input table exist.');
+                    'None of the files in the input table exist with a valid channel.');
             end
 
             X = cell(height(T),1);
             fs = nan(height(T),1);
             for i = 1:height(T)
                 [y,fsi] = audioread(files(i));
-                if size(y,2)>1
-                    y = y(:,1); % default to the first channel for stereo files
-                end
+                y = y(:,T.channel(i));
                 fs(i) = fsi;
 
                 i0 = 1;
@@ -454,14 +487,14 @@ classdef envelopeMetrics
 
         function names = paramNames()
             names = {'env_Passband','env_Lowpass','env_BandpassFilterOrder', ...
-                'env_LowpassFilterOrder','env_Downsample','env_Rescale', ...
+                'env_LowpassFilterOrder','env_Downsample','env_Rescale','env_ZeroPad', ...
                 'env_TukeywinParam','env_EdgeAttenutation', ...
                 'spec_Nfft','spec_SmoothBw','spec_PowerBins','spec_CentroidBins', ...
                 'emd_MaxImf','emd_EdgeNull','emd_SiftRelTol', ...
                 'emd_SiftMaxIterations','emd_MaxNumExtrema','emd_MaxEnergyRatio', ...
                 'emd_Interpolation','emd_HhtFrequencyLimits', ...
                 'emd_ImfFreqBounds','emd_AutoImfFreqBoundsDb', ...
-                'emd_FreqExclusionPercentile','verbose'};
+                'emd_FreqExclusionPercentile','includeEnvelope','verbose'};
         end
 
         function params = defaultParams()
