@@ -237,3 +237,8 @@ rhythm metrics can no longer be reliably interpreted as representing "syllable" 
 periodicity. In these circumstances, the metrics can still be used to characterize
 rhythm, but specifically, it is a more generic notion of "rhythm" that conflates
 speech activity and/or disfluency with syllable-, stress-, and phrasal-periodicity.
+
+## Acknowledgments
+
+Portions of this repository — including code review, refactoring, documentation, and this
+README/`TECHNICAL.md` — were developed with assistance from Claude Code (Anthropic).
