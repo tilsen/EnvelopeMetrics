@@ -209,10 +209,8 @@ Instantaneous frequency is only meaningful where the IMF has non-negligible ampl
    which that filter's magnitude response reaches `emd_AutoImfFreqBoundsDb` (default −10 dB),
    using the closed-form Butterworth magnitude response (independent of $F_s$). With $L$ =
    `env_Lowpass`, $d$ = `emd_AutoImfFreqBoundsDb`, and $n$ = `env_LowpassFilterOrder`,
-   `emd_ImfFreqBounds` is:
-   $$
-   \left[0,\ \ L\cdot\big(10^{-d/10}-1\big)^{\frac{1}{2n}}\right]
-   $$
+   `emd_ImfFreqBounds` is
+   $\left[0,\ \ L\cdot\big(10^{-d/10}-1\big)^{\frac{1}{2n}}\right]$.
    With the defaults (10 Hz, order 4, −10 dB) this evaluates to $[0, 13.16]$ Hz. Because it's
    derived, it automatically tracks `env_Lowpass`/`env_LowpassFilterOrder` if you change
    them — set `emd_ImfFreqBounds` to an explicit `[low high]` to override it instead.
