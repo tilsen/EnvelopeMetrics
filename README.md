@@ -191,7 +191,7 @@ em = envelopeMetrics(T).setParams(preset);
 - [demo.m](demo.m) — runnable walkthrough; regenerates `figures/*.png`.
 - [data/](data/) — example audio files and a token table (`exampleTokensTable.csv`) used
   by the Quick start snippets and `demo.m`.
-- [figtools/](figtools/) — utility classes/functions (`stFig` and its
+- [utils/](utils/) — utility classes/functions (`stFig` and its
   dependencies) used by the plotter.
 - [CITATION.cff](CITATION.cff) — citation metadata for this repository.
 

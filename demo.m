@@ -5,7 +5,7 @@
 % Run with: matlab -batch "run('demo.m')"
 
 repoDir = fileparts(mfilename('fullpath'));
-addpath(fullfile(repoDir, 'figtools'));
+addpath(fullfile(repoDir, 'utils'));
 
 figDir = fullfile(repoDir, 'figures');
 if ~exist(figDir, 'dir')
