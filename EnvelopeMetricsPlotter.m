@@ -4,9 +4,9 @@ classdef EnvelopeMetricsPlotter
         FigureSizeInches = [0 0 6.4 5.4] % taller than 4:3 to leave headroom for title+legend at these font sizes
         EmdOverviewSizeInches = [0 0 6.4 8.6] % same width as FigureSizeInches, taller for 3 stacked panels
         ExteriorMargins = [0.22 0.22 0.09 0.24] % left, bottom, right, top - room for larger fonts
-        AxesFontSize = 12 % tick label size
-        LabelFontSize = 14 % x/y axis label size
-        TitleFontSize = 16
+        AxesFontSize = 11 % tick label size
+        LabelFontSize = 13 % x/y axis label size
+        TitleFontSize = 15
         LegendFontSize = 13
     end
 
@@ -26,6 +26,8 @@ classdef EnvelopeMetricsPlotter
             EnvelopeMetricsPlotter.setAxisFontSize(ax, opts.AxesFontSize);
             plot(ax, t, x, 'Color', [0.6 0.6 0.6], 'LineWidth', 1);
             plot(ax, t_env, env, 'LineWidth', 2);
+            axis(ax, 'tight');
+            ylim(ax, max(abs(ylim(ax))) * [-1 1]);
             xlabel(ax, 'time (s)', 'FontSize', opts.LabelFontSize);
             ylabel(ax, 'amplitude', 'FontSize', opts.LabelFontSize);
             legend(ax, 'waveform', 'envelope', 'Location', 'northeast', 'FontSize', opts.LegendFontSize);
