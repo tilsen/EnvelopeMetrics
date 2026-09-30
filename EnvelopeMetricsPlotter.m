@@ -142,6 +142,8 @@ classdef EnvelopeMetricsPlotter
             legend(ax3, legendLabels, 'Location', 'northeast', 'FontSize', opts.LegendFontSize);
             xlim(ax3, xl);
             grid(ax3, 'on');
+
+            fig.fixTickLabelOverlap();
         end
 
         function saveFigure(fig, filepath)

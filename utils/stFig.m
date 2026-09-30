@@ -474,6 +474,151 @@ classdef stFig < handle
             end
         end
 
+        function [] = fixTickLabelOverlap(obj,ax,opts)
+            % Detects and resolves tick-label crowding between adjacent
+            % panels in a stack (Dimension='y', the default -- e.g. the
+            % bottom YTick label of one panel sitting on top of the top
+            % YTick label of the panel below it) or a row of panels
+            % (Dimension='x'). Since MATLAB does not expose reliable
+            % ground-truth rendered text extents in headless (-batch)
+            % sessions, overlap is estimated from each axes' FontSize (for
+            % y: label height) or FontSize + tick-label string length (for
+            % x: label width), converted to physical units via the
+            % figure's own size.
+            %
+            % Method='resize' (default): shrinks every axes on one side of
+            % a detected overlap by ResizeBy (default 10%) in the given
+            % dimension, about its own center, without touching axis
+            % limits or tick values -- this just adds whitespace between
+            % panels.
+            % Method='removeHighest'/'removeLowest': instead removes the
+            % single tick (by value) bordering each detected overlap,
+            % taken from one specific side of the boundary. This never
+            % touches the outermost tick of the panel at the very start or
+            % end of the stack/row, since that tick borders the whole
+            % figure, not another panel, and so is never the cause of an
+            % overlap.
+            arguments
+                obj
+                ax = []
+                opts.Dimension (1,1) string {mustBeMember(opts.Dimension,["x" "y"])} = "y"
+                opts.Method (1,1) string {mustBeMember(opts.Method,["resize" "removeHighest" "removeLowest"])} = "resize"
+                opts.ResizeBy (1,1) double {mustBePositive} = 0.10
+                opts.MinGapFactor (1,1) double {mustBePositive} = 1.0
+            end
+
+            ax = obj.validAxes(ax);
+            if numel(ax)<2, return; end
+
+            fig = obj.Handle;
+            figUnits = fig.Units;
+            fig.Units = 'inches';
+            figSizeIn = fig.Position(3:4); % [width height]
+            fig.Units = figUnits;
+
+            pos = cell2mat(arrayfun(@(a){getAxesTruePosition(a)},ax(:)));
+
+            % Group axes into "lanes": along Dimension, axes whose
+            % footprint overlaps in the OTHER dimension belong to the same
+            % stack/row and are checked against each other in traversal
+            % order (top-to-bottom for y, left-to-right for x).
+            if opts.Dimension=="y"
+                crossLo = pos(:,1); crossHi = pos(:,1)+pos(:,3);
+                alongPos = pos(:,2);
+            else
+                crossLo = pos(:,2); crossHi = pos(:,2)+pos(:,4);
+                alongPos = pos(:,1);
+            end
+
+            remaining = 1:numel(ax);
+            lanes = {};
+            while ~isempty(remaining)
+                seed = remaining(1);
+                inLane = remaining(crossLo(remaining)<crossHi(seed) & crossHi(remaining)>crossLo(seed));
+                lanes{end+1} = inLane; %#ok<AGROW>
+                remaining = setdiff(remaining,inLane);
+            end
+
+            toShrink = false(numel(ax),1);
+
+            for L = 1:numel(lanes)
+                laneIx = lanes{L};
+                if numel(laneIx)<2, continue; end
+                if opts.Dimension=="y"
+                    [~,ord] = sort(alongPos(laneIx),'descend'); % top to bottom
+                else
+                    [~,ord] = sort(alongPos(laneIx),'ascend');  % left to right
+                end
+                laneIx = laneIx(ord);
+
+                for b = 1:numel(laneIx)-1
+                    i1 = laneIx(b);   % earlier in traversal order
+                    i2 = laneIx(b+1); % later in traversal order
+                    a1 = ax(i1);
+                    a2 = ax(i2);
+
+                    if opts.Dimension=="y"
+                        % a1 (upper) borders this boundary with its lowest
+                        % tick; a2 (lower) borders it with its highest.
+                        tick1 = min(a1.YTick); lim1 = a1.YLim; p1 = pos(i1,:);
+                        tick2 = max(a2.YTick); lim2 = a2.YLim; p2 = pos(i2,:);
+                        if isempty(tick1) || isempty(tick2), continue; end
+                        fig1 = p1(2) + ((tick1-lim1(1))/diff(lim1))*p1(4);
+                        fig2 = p2(2) + ((tick2-lim2(1))/diff(lim2))*p2(4);
+                        gapPt = (fig1-fig2) * figSizeIn(2) * 72;
+                        minGapPt = opts.MinGapFactor * 1.1 * max(a1.FontSize,a2.FontSize);
+                    else
+                        % a1 (left) borders this boundary with its highest
+                        % tick; a2 (right) borders it with its lowest.
+                        tick1 = max(a1.XTick); lim1 = a1.XLim; p1 = pos(i1,:);
+                        tick2 = min(a2.XTick); lim2 = a2.XLim; p2 = pos(i2,:);
+                        if isempty(tick1) || isempty(tick2), continue; end
+                        fig1 = p1(1) + ((tick1-lim1(1))/diff(lim1))*p1(3);
+                        fig2 = p2(1) + ((tick2-lim2(1))/diff(lim2))*p2(3);
+                        gapPt = (fig2-fig1) * figSizeIn(1) * 72;
+                        halfW1 = 0.5*numel(stFig.tickLabelString(a1,'x',tick1))*a1.FontSize*0.62;
+                        halfW2 = 0.5*numel(stFig.tickLabelString(a2,'x',tick2))*a2.FontSize*0.62;
+                        minGapPt = opts.MinGapFactor * (halfW1+halfW2);
+                    end
+
+                    if gapPt >= minGapPt, continue; end % no overlap here
+
+                    switch opts.Method
+                        case 'resize'
+                            toShrink(i1) = true;
+                            toShrink(i2) = true;
+                        case 'removeHighest'
+                            if opts.Dimension=="y"
+                                stFig.removeExtremeTick(a2,'max','y');
+                            else
+                                stFig.removeExtremeTick(a1,'max','x');
+                            end
+                        case 'removeLowest'
+                            if opts.Dimension=="y"
+                                stFig.removeExtremeTick(a1,'min','y');
+                            else
+                                stFig.removeExtremeTick(a2,'min','x');
+                            end
+                    end
+                end
+            end
+
+            if opts.Method=="resize"
+                for i = find(toShrink)'
+                    p = ax(i).Position;
+                    if opts.Dimension=="y"
+                        newH = p(4)*(1-opts.ResizeBy);
+                        newY = p(2) + (p(4)-newH)/2;
+                        set(ax(i),'Position',[p(1) newY p(3) newH]);
+                    else
+                        newW = p(3)*(1-opts.ResizeBy);
+                        newX = p(1) + (p(3)-newW)/2;
+                        set(ax(i),'Position',[newX p(2) newW p(4)]);
+                    end
+                end
+            end
+        end
+
         function [locations] = getLocations(obj,ax)
             arguments
                 obj
@@ -1045,6 +1190,45 @@ classdef stFig < handle
     end
 
     methods (Static)
+
+        function removeExtremeTick(ax,which,dim)
+            % Drops the single highest- or lowest-valued tick from an
+            % axes' XTick/YTick, leaving at least 2 ticks behind.
+            if dim=="y"
+                tk = ax.YTick;
+            else
+                tk = ax.XTick;
+            end
+            if numel(tk)<3, return; end
+            switch which
+                case 'max'
+                    tk = tk(tk<max(tk));
+                case 'min'
+                    tk = tk(tk>min(tk));
+            end
+            if dim=="y"
+                set(ax,'YTick',tk);
+            else
+                set(ax,'XTick',tk);
+            end
+        end
+
+        function str = tickLabelString(ax,dim,tickVal)
+            % The rendered tick-label text for a given tick value, used to
+            % estimate label width. Falls back to a plain numeric string
+            % if the value isn't found among the axes' current ticks.
+            if dim=="x"
+                tk = ax.XTick; labels = ax.XTickLabel;
+            else
+                tk = ax.YTick; labels = ax.YTickLabel;
+            end
+            ix = find(tk==tickVal,1);
+            if isempty(ix) || ix>numel(labels)
+                str = sprintf('%g',tickVal);
+            else
+                str = labels{ix};
+            end
+        end
 
         function tf = isLiveScript()
             % Best-effort detection of whether the CALLING code is
